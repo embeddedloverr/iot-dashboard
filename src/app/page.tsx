@@ -163,7 +163,7 @@ export default function Dashboard() {
 
             <div className="chart-layout section-gap">
               <HistoricalChart data={historyData} range={range} onRangeChange={setRange} loading={historyLoading} />
-              <DeviceSelector devices={devices} selectedMac={selectedMac} onSelect={setSelectedMac} />
+              <DeviceSelector devices={devices} aliases={aliases} selectedMac={selectedMac} onSelect={setSelectedMac} />
             </div>
           </>
         )}
