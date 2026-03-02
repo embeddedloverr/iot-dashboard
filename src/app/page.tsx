@@ -36,6 +36,15 @@ export default function Dashboard() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [aliases, setAliases] = useState<Record<string, string>>({});
+
+  const fetchAliases = useCallback(async () => {
+    try {
+      const res = await fetch("/api/devices/aliases");
+      const data = await res.json();
+      if (data.success) setAliases(data.data);
+    } catch (err) { console.error("Failed to fetch aliases:", err); }
+  }, []);
 
   const fetchLatest = useCallback(async () => {
     try {
@@ -78,11 +87,11 @@ export default function Dashboard() {
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
-      await Promise.all([fetchLatest(), fetchDevices()]);
+      await Promise.all([fetchLatest(), fetchDevices(), fetchAliases()]);
       setLoading(false);
     };
     loadAll();
-  }, [fetchLatest, fetchDevices]);
+  }, [fetchLatest, fetchDevices, fetchAliases]);
 
   useEffect(() => { fetchHistory(); fetchStats(); }, [fetchHistory, fetchStats]);
   useEffect(() => { const i = setInterval(fetchLatest, 30000); return () => clearInterval(i); }, [fetchLatest]);
@@ -90,11 +99,10 @@ export default function Dashboard() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchLatest(), fetchHistory(), fetchStats(), fetchDevices()]);
+    await Promise.all([fetchLatest(), fetchHistory(), fetchStats(), fetchDevices(), fetchAliases()]);
     setRefreshing(false);
   };
 
-  // Filter readings based on selected device
   const displayedReadings = selectedMac
     ? latestReadings.filter((r) => r.mac === selectedMac)
     : latestReadings;
@@ -108,7 +116,6 @@ export default function Dashboard() {
 
         {activeSection === "dashboard" && (
           <>
-            {/* Device Cards Section */}
             <div className="section-label">
               <h2>📡 Sensor Devices</h2>
               {latestReadings.length > 0 && (
@@ -134,6 +141,7 @@ export default function Dashboard() {
                   <DeviceCard
                     key={reading.mac}
                     mac={reading.mac}
+                    alias={aliases[reading.mac]}
                     temp_c={reading.temp_c}
                     hum_rh={reading.hum_rh}
                     rssi={reading.rssi}
@@ -146,7 +154,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Stats */}
             <StatsGrid
               temperature={stats?.temperature ?? null}
               humidity={stats?.humidity ?? null}
@@ -154,7 +161,6 @@ export default function Dashboard() {
               range={range}
             />
 
-            {/* Chart + Device Filter */}
             <div className="chart-layout section-gap">
               <HistoricalChart data={historyData} range={range} onRangeChange={setRange} loading={historyLoading} />
               <DeviceSelector devices={devices} selectedMac={selectedMac} onSelect={setSelectedMac} />
@@ -162,7 +168,13 @@ export default function Dashboard() {
           </>
         )}
 
-        {activeSection === "alerts" && <AlertConfigPanel />}
+        {activeSection === "alerts" && (
+          <AlertConfigPanel
+            devices={devices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || "" }))}
+            aliases={aliases}
+            onAliasUpdate={fetchAliases}
+          />
+        )}
 
         <footer className="dashboard-footer">
           Designed by <span className="brand">Smartdwell Technologies</span> · IoT Monitoring Dashboard

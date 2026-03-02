@@ -4,6 +4,7 @@ import React from "react";
 
 interface DeviceCardProps {
     mac: string;
+    alias?: string;
     temp_c: number;
     hum_rh: number;
     rssi: number;
@@ -15,6 +16,7 @@ interface DeviceCardProps {
 
 export default function DeviceCard({
     mac,
+    alias,
     temp_c,
     hum_rh,
     rssi,
@@ -33,6 +35,7 @@ export default function DeviceCard({
     const humStatusColor = humStatus === "critical" ? "var(--accent-red)" : humStatus === "warning" ? "var(--accent-orange)" : "var(--accent-green)";
 
     const shortMac = mac.slice(-8);
+    const displayName = alias || shortMac;
 
     return (
         <div
@@ -41,18 +44,18 @@ export default function DeviceCard({
             role="button"
             tabIndex={0}
         >
-            {/* Card Header */}
             <div className="device-card-header">
                 <div className="device-card-identity">
-                    <span className={`status-dot online`} />
-                    <span className="device-card-mac">{shortMac}</span>
+                    <span className="status-dot online" />
+                    <div>
+                        <span className="device-card-name">{displayName}</span>
+                        {alias && <span className="device-card-mac-sub">{shortMac}</span>}
+                    </div>
                 </div>
                 <span className="device-card-ssid">{ssid}</span>
             </div>
 
-            {/* Readings Row */}
             <div className="device-card-readings">
-                {/* Temperature */}
                 <div className="device-card-reading">
                     <div className="reading-icon-row">
                         <span className="reading-icon">🌡️</span>
@@ -63,10 +66,7 @@ export default function DeviceCard({
                         <span className="reading-unit">°C</span>
                     </div>
                     <div className="reading-bar-track">
-                        <div
-                            className="reading-bar-fill reading-bar-temp"
-                            style={{ width: `${tempPercent}%` }}
-                        />
+                        <div className="reading-bar-fill reading-bar-temp" style={{ width: `${tempPercent}%` }} />
                     </div>
                     <div className="reading-status">
                         <span className="reading-status-dot" style={{ background: tempStatusColor }} />
@@ -74,10 +74,8 @@ export default function DeviceCard({
                     </div>
                 </div>
 
-                {/* Divider */}
                 <div className="device-card-divider" />
 
-                {/* Humidity */}
                 <div className="device-card-reading">
                     <div className="reading-icon-row">
                         <span className="reading-icon">💧</span>
@@ -88,10 +86,7 @@ export default function DeviceCard({
                         <span className="reading-unit">%</span>
                     </div>
                     <div className="reading-bar-track">
-                        <div
-                            className="reading-bar-fill reading-bar-hum"
-                            style={{ width: `${humPercent}%` }}
-                        />
+                        <div className="reading-bar-fill reading-bar-hum" style={{ width: `${humPercent}%` }} />
                     </div>
                     <div className="reading-status">
                         <span className="reading-status-dot" style={{ background: humStatusColor }} />
@@ -100,7 +95,6 @@ export default function DeviceCard({
                 </div>
             </div>
 
-            {/* Card Footer */}
             <div className="device-card-footer">
                 <div className="device-card-meta">
                     <span className="meta-label">RSSI</span>

@@ -1484,3 +1484,268 @@ body::before {
   color: var(--text-secondary);
   white-space: nowrap;
 }
+
+/* ========== ALERT TABS ========== */
+.alert-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--bg-card);
+  border-radius: 14px;
+  padding: 4px;
+  border: 1px solid var(--glass-border);
+}
+
+.alert-tab {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.alert-tab:hover {
+  color: var(--text-primary);
+  background: rgba(79, 125, 245, 0.06);
+}
+
+.alert-tab.active {
+  background: var(--gradient-primary);
+  color: white;
+  font-weight: 600;
+}
+
+/* ========== DEVICE CONFIG LIST ========== */
+.device-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.device-config-item {
+  padding: 16px !important;
+}
+
+.device-config-item:hover {
+  transform: none !important;
+}
+
+.device-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.device-config-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.device-config-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.device-config-mac {
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+
+.custom-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(79, 125, 245, 0.15);
+  color: var(--accent-blue);
+}
+
+.device-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.device-config-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.device-setpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.device-setpoint-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent-red);
+}
+
+/* Alias Editor */
+.alias-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.alias-input {
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+  border-radius: 8px !important;
+}
+
+.alias-save-btn,
+.alias-cancel-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+}
+
+.alias-save-btn {
+  color: var(--accent-green);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.alias-save-btn:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.alias-cancel-btn {
+  color: var(--accent-red);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.alias-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.alias-set-btn {
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  color: var(--accent-blue);
+  background: transparent;
+  border: 1px dashed rgba(79, 125, 245, 0.3);
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.alias-set-btn:hover {
+  background: rgba(79, 125, 245, 0.08);
+  border-style: solid;
+}
+
+/* Device Config Actions */
+.device-config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.device-enable-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.toggle-switch.small {
+  width: 36px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.toggle-switch.small::after {
+  width: 14px;
+  height: 14px;
+  top: 2px;
+  left: 2px;
+}
+
+.toggle-switch.small.active::after {
+  left: 18px;
+}
+
+.btn-device-save {
+  padding: 5px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  background: var(--gradient-primary);
+  border: none;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-device-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(79, 125, 245, 0.3);
+}
+
+.btn-device-reset {
+  padding: 5px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--accent-orange);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-device-reset:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+/* ========== DEVICE CARD NAME ========== */
+.device-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.device-card-mac-sub {
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 1px;
+}

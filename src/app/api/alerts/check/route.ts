@@ -6,7 +6,7 @@ export async function GET() {
     try {
         const db = await getDb();
 
-        // Get alert config
+        // Get global alert config
         const config = await db
             .collection("alert_config")
             .findOne({ _id: "default" as unknown as import("mongodb").ObjectId });
@@ -17,6 +17,20 @@ export async function GET() {
                 message: "Alerts not enabled",
                 triggered: false,
             });
+        }
+
+        // Get per-device alert configs
+        const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
+        const deviceConfigMap: Record<string, { tempSetpoint: number; enabled: boolean }> = {};
+        for (const dc of deviceConfigs) {
+            deviceConfigMap[dc.mac] = { tempSetpoint: dc.tempSetpoint, enabled: dc.enabled };
+        }
+
+        // Get device aliases for readable emails
+        const aliasesArr = await db.collection("device_aliases").find({}).toArray();
+        const aliasMap: Record<string, string> = {};
+        for (const a of aliasesArr) {
+            aliasMap[a.mac] = a.alias;
         }
 
         // Get latest readings for all devices
@@ -34,15 +48,20 @@ export async function GET() {
             ])
             .toArray();
 
-        const alerts: Array<{ mac: string; temp: number; ts: string }> = [];
+        const alerts: Array<{ mac: string; alias: string; temp: number; setpoint: number; ts: string }> = [];
 
         for (const reading of latestReadings) {
             const temp = reading.latestDoc.json.temp_c;
             const mac = reading._id;
             const ts = reading.latestDoc.json.ts;
 
-            if (temp >= config.tempSetpoint) {
-                alerts.push({ mac, temp, ts });
+            // Use per-device config if it exists, otherwise fall back to global
+            const deviceCfg = deviceConfigMap[mac];
+            const setpoint = deviceCfg ? deviceCfg.tempSetpoint : config.tempSetpoint;
+            const deviceEnabled = deviceCfg ? deviceCfg.enabled : true;
+
+            if (deviceEnabled && temp >= setpoint) {
+                alerts.push({ mac, alias: aliasMap[mac] || mac, temp, setpoint, ts });
             }
         }
 
@@ -60,16 +79,17 @@ export async function GET() {
 
             // Send email for each breached device
             for (const alert of alerts) {
+                const deviceLabel = alert.alias !== alert.mac ? `${alert.alias} (${alert.mac})` : alert.mac;
                 const html = buildAlertEmailHtml(
-                    alert.mac,
+                    deviceLabel,
                     alert.temp,
-                    config.tempSetpoint,
+                    alert.setpoint,
                     alert.ts
                 );
                 try {
                     await sendAlertEmail(
                         config.email,
-                        `🌡️ Temp Alert: ${alert.temp}°C on ${alert.mac}`,
+                        `🌡️ Temp Alert: ${alert.temp}°C on ${alert.alias}`,
                         html
                     );
                 } catch (emailErr) {
@@ -82,12 +102,13 @@ export async function GET() {
                 await db.collection("alert_history").insertOne({
                     type: "temperature",
                     mac: alert.mac,
+                    alias: alert.alias,
                     temp: alert.temp,
-                    setpoint: config.tempSetpoint,
+                    setpoint: alert.setpoint,
                     email: config.email,
                     triggeredAt: new Date(),
                     sensorTs: alert.ts,
-                    details: `Temperature ${alert.temp}°C exceeded setpoint ${config.tempSetpoint}°C`,
+                    details: `${alert.alias}: ${alert.temp}°C exceeded setpoint ${alert.setpoint}°C`,
                 });
             }
 
