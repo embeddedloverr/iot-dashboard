@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a1a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f7df5"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="temp" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Thermometer -->
+  <rect x="180" y="100" width="36" height="200" rx="18" fill="url(#temp)"/>
+  <circle cx="198" cy="340" r="50" fill="url(#temp)"/>
+  <circle cx="198" cy="340" r="30" fill="#0a0a1a"/>
+  <circle cx="198" cy="340" r="18" fill="url(#temp)"/>
+  <!-- Droplet -->
+  <path d="M340 180 Q340 180 370 260 Q390 310 340 340 Q290 310 310 260 Z" fill="url(#drop)" opacity="0.9"/>
+  <!-- Glow -->
+  <circle cx="198" cy="340" r="60" fill="url(#temp)" opacity="0.15"/>
+  <circle cx="340" cy="280" r="50" fill="url(#drop)" opacity="0.1"/>
+</svg>

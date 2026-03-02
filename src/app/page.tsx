@@ -1,64 +1,172 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useEffect, useCallback } from "react";
+import Sidebar from "@/components/Sidebar";
+import Header from "@/components/Header";
+import DeviceCard from "@/components/DeviceCard";
+import HistoricalChart from "@/components/HistoricalChart";
+import StatsGrid from "@/components/StatsGrid";
+import DeviceSelector from "@/components/DeviceSelector";
+import AlertConfigPanel from "@/components/AlertConfig";
+
+interface SensorReading {
+  mac: string; temp_c: number; hum_rh: number; rssi: number; ssid: string; ts: string;
+}
+interface HistoryPoint {
+  ts: string; temp_c: number; hum_rh: number; mac: string;
+}
+interface StatsData {
+  temperature: { avg: number; min: number; max: number };
+  humidity: { avg: number; min: number; max: number };
+  totalReadings: number;
+}
+interface Device {
+  mac: string; ssid: string; lastSeen: string; count: number;
+}
+
+export default function Dashboard() {
+  const [activeSection, setActiveSection] = useState("dashboard");
+  const [latestReadings, setLatestReadings] = useState<SensorReading[]>([]);
+  const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
+  const [stats, setStats] = useState<StatsData | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [selectedMac, setSelectedMac] = useState("");
+  const [range, setRange] = useState("24h");
+  const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  const fetchLatest = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sensor/latest");
+      const data = await res.json();
+      if (data.success) { setLatestReadings(data.data); setLastUpdated(new Date().toLocaleTimeString()); }
+    } catch (err) { console.error("Failed to fetch latest:", err); }
+  }, []);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({ range });
+      if (selectedMac) params.set("mac", selectedMac);
+      const res = await fetch(`/api/sensor/history?${params}`);
+      const data = await res.json();
+      if (data.success) setHistoryData(data.data);
+    } catch (err) { console.error("Failed to fetch history:", err); }
+    finally { setHistoryLoading(false); }
+  }, [range, selectedMac]);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ range });
+      if (selectedMac) params.set("mac", selectedMac);
+      const res = await fetch(`/api/sensor/stats?${params}`);
+      const data = await res.json();
+      if (data.success) setStats(data.data);
+    } catch (err) { console.error("Failed to fetch stats:", err); }
+  }, [range, selectedMac]);
+
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sensor/devices");
+      const data = await res.json();
+      if (data.success) setDevices(data.data);
+    } catch (err) { console.error("Failed to fetch devices:", err); }
+  }, []);
+
+  useEffect(() => {
+    const loadAll = async () => {
+      setLoading(true);
+      await Promise.all([fetchLatest(), fetchDevices()]);
+      setLoading(false);
+    };
+    loadAll();
+  }, [fetchLatest, fetchDevices]);
+
+  useEffect(() => { fetchHistory(); fetchStats(); }, [fetchHistory, fetchStats]);
+  useEffect(() => { const i = setInterval(fetchLatest, 30000); return () => clearInterval(i); }, [fetchLatest]);
+  useEffect(() => { const i = setInterval(() => { fetch("/api/alerts/check").catch(console.error); }, 120000); return () => clearInterval(i); }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchLatest(), fetchHistory(), fetchStats(), fetchDevices()]);
+    setRefreshing(false);
+  };
+
+  // Filter readings based on selected device
+  const displayedReadings = selectedMac
+    ? latestReadings.filter((r) => r.mac === selectedMac)
+    : latestReadings;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="app-layout">
+      <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
+
+      <main className="main-content">
+        <Header lastUpdated={lastUpdated} onRefresh={handleRefresh} refreshing={refreshing} />
+
+        {activeSection === "dashboard" && (
+          <>
+            {/* Device Cards Section */}
+            <div className="section-label">
+              <h2>📡 Sensor Devices</h2>
+              {latestReadings.length > 0 && (
+                <span className="device-count">{latestReadings.length} online</span>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="device-cards-grid">
+                <div className="glass-card skeleton skeleton-card" />
+                <div className="glass-card skeleton skeleton-card" />
+                <div className="glass-card skeleton skeleton-card" />
+              </div>
+            ) : displayedReadings.length === 0 ? (
+              <div className="glass-card empty-state">
+                <span className="empty-icon">📡</span>
+                <p className="empty-title">No sensor data found</p>
+                <p className="empty-text">Make sure MongoDB is running and has data in mqtt_packets</p>
+              </div>
+            ) : (
+              <div className="device-cards-grid">
+                {displayedReadings.map((reading) => (
+                  <DeviceCard
+                    key={reading.mac}
+                    mac={reading.mac}
+                    temp_c={reading.temp_c}
+                    hum_rh={reading.hum_rh}
+                    rssi={reading.rssi}
+                    ssid={reading.ssid}
+                    ts={reading.ts}
+                    selected={selectedMac === reading.mac}
+                    onClick={() => setSelectedMac(selectedMac === reading.mac ? "" : reading.mac)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Stats */}
+            <StatsGrid
+              temperature={stats?.temperature ?? null}
+              humidity={stats?.humidity ?? null}
+              totalReadings={stats?.totalReadings ?? 0}
+              range={range}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+            {/* Chart + Device Filter */}
+            <div className="chart-layout section-gap">
+              <HistoricalChart data={historyData} range={range} onRangeChange={setRange} loading={historyLoading} />
+              <DeviceSelector devices={devices} selectedMac={selectedMac} onSelect={setSelectedMac} />
+            </div>
+          </>
+        )}
+
+        {activeSection === "alerts" && <AlertConfigPanel />}
+
+        <footer className="dashboard-footer">
+          Designed by <span className="brand">Smartdwell Technologies</span> · IoT Monitoring Dashboard
+        </footer>
       </main>
     </div>
   );

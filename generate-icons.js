@@ -1,0 +1,38 @@
+const fs = require('fs');
+const path = require('path');
+
+const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+const dir = path.join(__dirname, 'public', 'icons');
+
+if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+}
+
+sizes.forEach(s => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a1a"/>
+    </linearGradient>
+    <linearGradient id="t" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+    <linearGradient id="d" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect x="180" y="100" width="36" height="200" rx="18" fill="url(#t)"/>
+  <circle cx="198" cy="340" r="50" fill="url(#t)"/>
+  <circle cx="198" cy="340" r="30" fill="#0a0a1a"/>
+  <circle cx="198" cy="340" r="18" fill="url(#t)"/>
+  <path d="M340 180 Q340 180 370 260 Q390 310 340 340 Q290 310 310 260 Z" fill="url(#d)" opacity="0.9"/>
+</svg>`;
+    fs.writeFileSync(path.join(dir, `icon-${s}x${s}.svg`), svg);
+    console.log(`Created icon-${s}x${s}.svg`);
+});
+
+console.log('All icons created!');
