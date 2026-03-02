@@ -10,7 +10,7 @@ import DeviceSelector from "@/components/DeviceSelector";
 import AlertConfigPanel from "@/components/AlertConfig";
 
 interface SensorReading {
-  mac: string; temp_c: number; hum_rh: number; rssi: number; ssid: string; ts: string;
+  mac: string; temp_c: number; hum_rh: number; rssi: number; ssid: string; ts: string; mongoTs?: string;
 }
 interface HistoryPoint {
   ts: string; temp_c: number; hum_rh: number; mac: string;
@@ -147,6 +147,7 @@ export default function Dashboard() {
                     rssi={reading.rssi}
                     ssid={reading.ssid}
                     ts={reading.ts}
+                    mongoTs={reading.mongoTs}
                     selected={selectedMac === reading.mac}
                     onClick={() => setSelectedMac(selectedMac === reading.mac ? "" : reading.mac)}
                   />

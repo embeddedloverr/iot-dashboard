@@ -26,6 +26,7 @@ export async function GET() {
                     ssid: "$latestDoc.json.ssid",
                     ts: "$latestDoc.json.ts",
                     topic: "$latestDoc.topic",
+                    mongoTs: { $toDate: "$latestDoc._id" },
                 },
             },
         ];

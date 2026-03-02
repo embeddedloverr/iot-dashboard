@@ -1749,3 +1749,44 @@ body::before {
   display: block;
   margin-top: 1px;
 }
+
+/* ========== OFFLINE BADGE & CARD ========== */
+.device-card-offline {
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  opacity: 0.85;
+}
+
+.offline-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-red);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: pulseOffline 2s infinite;
+  z-index: 10;
+}
+
+@keyframes pulseOffline {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.history-type-badge[data-type="offline"] {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-orange);
+}

@@ -339,7 +339,7 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                                 <div key={item._id || i} className={`alert-history-item ${item.type === "test" ? "test" : ""}`}>
                                     <div className="history-item-left">
                                         <span className="history-type-badge" data-type={item.type}>
-                                            {item.type === "test" ? "📧 TEST" : "🚨 ALERT"}
+                                            {item.type === "test" ? "📧 TEST" : item.type === "offline" ? "⚠️ OFFLINE" : "🚨 ALERT"}
                                         </span>
                                         <div className="history-item-details">
                                             <span className="history-detail-text">{item.details}</span>
