@@ -77,6 +77,20 @@ export async function GET() {
                 }
             }
 
+            // Log each alert to history
+            for (const alert of alerts) {
+                await db.collection("alert_history").insertOne({
+                    type: "temperature",
+                    mac: alert.mac,
+                    temp: alert.temp,
+                    setpoint: config.tempSetpoint,
+                    email: config.email,
+                    triggeredAt: new Date(),
+                    sensorTs: alert.ts,
+                    details: `Temperature ${alert.temp}°C exceeded setpoint ${config.tempSetpoint}°C`,
+                });
+            }
+
             // Update last triggered
             await db.collection("alert_config").updateOne(
                 { _id: "default" as unknown as import("mongodb").ObjectId },
