@@ -1,19 +1,24 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface SidebarProps {
     activeSection: string;
     onSectionChange: (section: string) => void;
+    isAdmin?: boolean;
+    user?: { username: string; role: string } | null;
+    onLogout?: () => void;
 }
 
-const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "alerts", label: "Alerts", icon: "🔔" },
-];
-
-export default function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
+export default function Sidebar({ activeSection, onSectionChange, isAdmin, user, onLogout }: SidebarProps) {
     const [mobileOpen, setMobileOpen] = useState(false);
+    const router = useRouter();
+
+    const navItems = [
+        { id: "dashboard", label: "Dashboard", icon: "📊" },
+        { id: "alerts", label: "Alerts", icon: "🔔" },
+    ];
 
     return (
         <>
@@ -51,7 +56,35 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
                             <span>{item.label}</span>
                         </button>
                     ))}
+
+                    {isAdmin && (
+                        <button
+                            onClick={() => router.push("/admin")}
+                            className="sidebar-nav-item"
+                        >
+                            <span className="nav-icon">👑</span>
+                            <span>Admin</span>
+                        </button>
+                    )}
                 </nav>
+
+                {/* User info + logout at bottom */}
+                {user && (
+                    <div className="sidebar-user">
+                        <div className="sidebar-user-info">
+                            <span className="sidebar-user-avatar">
+                                {user.role === "superadmin" ? "👑" : user.role === "admin" ? "🛡️" : "👤"}
+                            </span>
+                            <div className="sidebar-user-details">
+                                <span className="sidebar-user-name">{user.username}</span>
+                                <span className="sidebar-user-role">{user.role}</span>
+                            </div>
+                        </div>
+                        <button className="sidebar-logout-btn" onClick={onLogout} title="Logout">
+                            🚪
+                        </button>
+                    </div>
+                )}
             </aside>
         </>
     );

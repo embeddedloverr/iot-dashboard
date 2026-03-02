@@ -8,6 +8,7 @@ import HistoricalChart from "@/components/HistoricalChart";
 import StatsGrid from "@/components/StatsGrid";
 import DeviceSelector from "@/components/DeviceSelector";
 import AlertConfigPanel from "@/components/AlertConfig";
+import { useAuth } from "@/components/AuthProvider";
 
 interface SensorReading {
   mac: string; temp_c: number; hum_rh: number; rssi: number; ssid: string; ts: string; mongoTs?: string;
@@ -25,6 +26,7 @@ interface Device {
 }
 
 export default function Dashboard() {
+  const { user, logout } = useAuth();
   const [activeSection, setActiveSection] = useState("dashboard");
   const [latestReadings, setLatestReadings] = useState<SensorReading[]>([]);
   const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
@@ -37,6 +39,10 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [aliases, setAliases] = useState<Record<string, string>>({});
+
+  const isAdmin = user?.role === "superadmin" || user?.role === "admin";
+  const userDevices = user?.devices || [];
+  const hasDeviceFilter = !isAdmin && userDevices.length > 0;
 
   const fetchAliases = useCallback(async () => {
     try {
@@ -103,13 +109,29 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
-  const displayedReadings = selectedMac
-    ? latestReadings.filter((r) => r.mac === selectedMac)
+  // Filter readings based on user's assigned devices
+  const filteredReadings = hasDeviceFilter
+    ? latestReadings.filter((r) => userDevices.includes(r.mac))
     : latestReadings;
+
+  const displayedReadings = selectedMac
+    ? filteredReadings.filter((r) => r.mac === selectedMac)
+    : filteredReadings;
+
+  // Filter devices list for selector
+  const filteredDevices = hasDeviceFilter
+    ? devices.filter((d) => userDevices.includes(d.mac))
+    : devices;
 
   return (
     <div className="app-layout">
-      <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
+      <Sidebar
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        isAdmin={isAdmin}
+        user={user}
+        onLogout={logout}
+      />
 
       <main className="main-content">
         <Header lastUpdated={lastUpdated} onRefresh={handleRefresh} refreshing={refreshing} />
@@ -118,8 +140,8 @@ export default function Dashboard() {
           <>
             <div className="section-label">
               <h2>📡 Sensor Devices</h2>
-              {latestReadings.length > 0 && (
-                <span className="device-count">{latestReadings.length} online</span>
+              {filteredReadings.length > 0 && (
+                <span className="device-count">{filteredReadings.length} online</span>
               )}
             </div>
 
@@ -133,7 +155,11 @@ export default function Dashboard() {
               <div className="glass-card empty-state">
                 <span className="empty-icon">📡</span>
                 <p className="empty-title">No sensor data found</p>
-                <p className="empty-text">Make sure MongoDB is running and has data in mqtt_packets</p>
+                <p className="empty-text">
+                  {hasDeviceFilter
+                    ? "No devices assigned to your account. Contact an admin."
+                    : "Make sure MongoDB is running and has data in mqtt_packets"}
+                </p>
               </div>
             ) : (
               <div className="device-cards-grid">
@@ -162,7 +188,7 @@ export default function Dashboard() {
               range={range}
             />
 
-            <DeviceSelector devices={devices} aliases={aliases} selectedMac={selectedMac} onSelect={setSelectedMac} />
+            <DeviceSelector devices={filteredDevices} aliases={aliases} selectedMac={selectedMac} onSelect={setSelectedMac} />
             <div className="section-gap" style={{ width: '100%', height: '400px' }}>
               <HistoricalChart data={historyData} range={range} onRangeChange={setRange} loading={historyLoading} />
             </div>
@@ -171,7 +197,7 @@ export default function Dashboard() {
 
         {activeSection === "alerts" && (
           <AlertConfigPanel
-            devices={devices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || "" }))}
+            devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || "" }))}
             aliases={aliases}
             onAliasUpdate={fetchAliases}
           />

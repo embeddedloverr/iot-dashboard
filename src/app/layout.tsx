@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import AuthProvider from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "SmartDwell IoT Monitor",
@@ -37,7 +38,9 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <ServiceWorkerRegister />
       </body>
     </html>
