@@ -396,15 +396,7 @@ body::before {
 }
 
 .chart-layout {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 24px;
-}
-
-@media (max-width: 1024px) {
-  .chart-layout {
-    grid-template-columns: 1fr;
-  }
+  display: block;
 }
 
 .section-gap {
@@ -691,13 +683,14 @@ body::before {
 /* ========== DEVICE SELECTOR ========== */
 .device-selector {
   padding: 16px;
+  margin-bottom: 24px;
 }
 
 .device-selector-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .device-selector-header .device-icon {
@@ -721,23 +714,22 @@ body::before {
 
 .device-list {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .device-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 10px 16px;
   border-radius: 12px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   cursor: pointer;
   text-align: left;
-  width: 100%;
+  flex: 1 1 200px;
+  max-width: 250px;
   transition: all 0.2s ease;
   color: var(--text-primary);
   font-family: 'Inter', sans-serif;

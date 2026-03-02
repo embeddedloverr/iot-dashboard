@@ -162,9 +162,9 @@ export default function Dashboard() {
               range={range}
             />
 
-            <div className="chart-layout section-gap">
+            <DeviceSelector devices={devices} aliases={aliases} selectedMac={selectedMac} onSelect={setSelectedMac} />
+            <div className="section-gap" style={{ width: '100%', height: '400px' }}>
               <HistoricalChart data={historyData} range={range} onRangeChange={setRange} loading={historyLoading} />
-              <DeviceSelector devices={devices} aliases={aliases} selectedMac={selectedMac} onSelect={setSelectedMac} />
             </div>
           </>
         )}
