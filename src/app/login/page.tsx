@@ -24,8 +24,9 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (data.success) {
-                router.push("/");
                 router.refresh();
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                router.push("/");
             } else {
                 setError(data.error || "Login failed");
             }

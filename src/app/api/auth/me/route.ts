@@ -3,6 +3,8 @@ import { getSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
     try {
         const session = getSession(request);

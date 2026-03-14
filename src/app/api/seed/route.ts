@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
     try {
         const db = await getDb();

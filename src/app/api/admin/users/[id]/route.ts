@@ -3,6 +3,8 @@ import { getDb } from "@/lib/db";
 import { requireAdmin, hashPassword } from "@/lib/auth";
 import { ObjectId } from "mongodb";
 
+export const dynamic = "force-dynamic";
+
 // PUT: Update user
 export async function PUT(
     request: NextRequest,

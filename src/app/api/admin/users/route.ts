@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { requireAdmin, hashPassword } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET: List all users (admin only)
 export async function GET(request: NextRequest) {
     try {
