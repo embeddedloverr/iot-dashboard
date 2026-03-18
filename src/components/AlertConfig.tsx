@@ -143,11 +143,40 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
         try {
             const res = await fetch("/api/alerts/check");
             const data = await res.json();
-            showMsg(
-                data.triggered ? `⚠️ ${(data.tempAlerts || 0) + (data.offlineAlerts || 0)} alert(s) triggered!` : "✅ All devices within range",
-                data.triggered ? "error" : "success"
-            );
+
+            // Build diagnostic message
+            let msg = "";
+            if (data.triggered) {
+                msg = `⚠️ ${(data.tempAlerts || 0) + (data.offlineAlerts || 0)} alert(s) triggered!`;
+                if (data.emailResults) {
+                    const sent = data.emailResults.filter((r: any) => r.status === "sent").length;
+                    const failed = data.emailResults.filter((r: any) => r.status === "error").length;
+                    const cooldown = data.emailResults.filter((r: any) => r.status === "cooldown").length;
+                    msg += ` | Emails: ${sent} sent, ${failed} failed, ${cooldown} cooldown`;
+                    if (failed > 0 && data.emailResults.find((r: any) => r.error)) {
+                        msg += ` | Error: ${data.emailResults.find((r: any) => r.error)?.error}`;
+                    }
+                }
+            } else {
+                msg = "✅ All devices within range";
+                if (data.debug) {
+                    const smtpLine = data.debug.find((d: string) => d.startsWith("SMTP:"));
+                    if (smtpLine && smtpLine.includes("NOT SET")) {
+                        msg += " ⚠️ SMTP credentials not configured on server!";
+                    }
+                }
+            }
+
+            showMsg(msg, data.triggered ? "error" : "success", 8000);
             if (data.triggered) fetchHistory();
+
+            // Log full debug to console for developer inspection
+            if (data.debug) {
+                console.log("🔍 Alert Check Debug:", data.debug);
+            }
+            if (data.smtpStatus) {
+                console.log("📧 SMTP Status:", data.smtpStatus);
+            }
         } catch { showMsg("Failed to check", "error"); }
     };
 
