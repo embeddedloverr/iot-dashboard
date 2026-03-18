@@ -2,16 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 
-interface GlobalConfig {
-    emails: string[];
-    tempSetpoint: number;
-    enabled: boolean;
-    lastTriggered?: string | null;
-}
-
 interface DeviceAlertConfig {
     tempSetpoint: number;
     enabled: boolean;
+    emails: string[];
 }
 
 interface AlertHistoryItem {
@@ -38,9 +32,6 @@ interface AlertConfigPanelProps {
 }
 
 export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: AlertConfigPanelProps) {
-    const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
-        emails: [], tempSetpoint: 40, enabled: false, lastTriggered: null,
-    });
     const [deviceConfigs, setDeviceConfigs] = useState<Record<string, DeviceAlertConfig>>({});
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -49,7 +40,20 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
     const [testSending, setTestSending] = useState(false);
     const [editingAlias, setEditingAlias] = useState<string | null>(null);
     const [aliasInput, setAliasInput] = useState("");
-    const [activeTab, setActiveTab] = useState<"config" | "devices" | "history">("config");
+    const [activeTab, setActiveTab] = useState<"devices" | "history">("devices");
+
+    // Bulk config state
+    const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [bulkConfig, setBulkConfig] = useState<DeviceAlertConfig>({
+        tempSetpoint: 40, enabled: true, emails: [""],
+    });
+
+    // Single device config modal
+    const [editingDevice, setEditingDevice] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<DeviceAlertConfig>({
+        tempSetpoint: 40, enabled: true, emails: [""],
+    });
 
     const fetchHistory = useCallback(async () => {
         setHistoryLoading(true);
@@ -63,15 +67,9 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
 
     const fetchAlertConfigs = useCallback(async () => {
         try {
-            // Global config
-            const res1 = await fetch("/api/alerts");
-            const data1 = await res1.json();
-            if (data1.success && data1.data) setGlobalConfig(data1.data);
-
-            // Per-device configs
-            const res2 = await fetch("/api/alerts/devices");
-            const data2 = await res2.json();
-            if (data2.success) setDeviceConfigs(data2.data.devices || {});
+            const res = await fetch("/api/alerts/devices");
+            const data = await res.json();
+            if (data.success) setDeviceConfigs(data.data.devices || {});
         } catch (err) { console.error("Failed to fetch configs:", err); }
     }, []);
 
@@ -81,28 +79,19 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
         setMessage({ text, type }); setTimeout(() => setMessage(null), ms);
     };
 
-    const saveGlobalConfig = async () => {
-        setSaving(true);
-        try {
-            const res = await fetch("/api/alerts", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(globalConfig),
-            });
-            const data = await res.json();
-            showMsg(data.success ? "✅ Global config saved!" : data.error, data.success ? "success" : "error");
-        } catch { showMsg("Network error", "error"); }
-        finally { setSaving(false); }
-    };
-
     const saveDeviceConfig = async (mac: string, cfg: DeviceAlertConfig) => {
         try {
+            const validEmails = cfg.emails.filter(e => e.trim() !== "");
             const res = await fetch("/api/alerts/devices", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mac, ...cfg }),
+                body: JSON.stringify({ mac, tempSetpoint: cfg.tempSetpoint, enabled: cfg.enabled, emails: validEmails }),
             });
             const data = await res.json();
-            showMsg(data.success ? `✅ Saved for ${aliases[mac] || mac}` : data.error, data.success ? "success" : "error");
-        } catch { showMsg("Network error", "error"); }
+            if (data.success) {
+                setDeviceConfigs(prev => ({ ...prev, [mac]: { ...cfg, emails: validEmails } }));
+            }
+            return data.success;
+        } catch { return false; }
     };
 
     const removeDeviceConfig = async (mac: string) => {
@@ -111,7 +100,7 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
             const updated = { ...deviceConfigs };
             delete updated[mac];
             setDeviceConfigs(updated);
-            showMsg(`Removed custom config for ${aliases[mac] || mac}`, "success");
+            showMsg(`Removed config for ${aliases[mac] || mac}`, "success");
         } catch { showMsg("Network error", "error"); }
     };
 
@@ -128,8 +117,8 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
         setEditingAlias(null); setAliasInput("");
     };
 
-    const sendTestEmail = async () => {
-        const validEmails = globalConfig.emails.filter(e => e.trim() !== "");
+    const sendTestEmail = async (emails: string[]) => {
+        const validEmails = emails.filter(e => e.trim() !== "");
         if (validEmails.length === 0) { showMsg("Enter at least one email first", "error"); return; }
         setTestSending(true);
         try {
@@ -149,7 +138,7 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
             const res = await fetch("/api/alerts/check");
             const data = await res.json();
             showMsg(
-                data.triggered ? `⚠️ ${data.alertCount} alert(s) triggered!` : "✅ All within range",
+                data.triggered ? `⚠️ ${(data.tempAlerts || 0) + (data.offlineAlerts || 0)} alert(s) triggered!` : "✅ All devices within range",
                 data.triggered ? "error" : "success"
             );
             if (data.triggered) fetchHistory();
@@ -160,15 +149,90 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
         day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
 
-    const getDeviceName = (mac: string) => aliases[mac] || mac.slice(-8);
+    const getDeviceName = (mac: string) => aliases[mac] || mac?.slice(-8) || "Unknown";
+
+    // --- Single device edit ---
+    const openDeviceEdit = (mac: string) => {
+        const cfg = deviceConfigs[mac] || { tempSetpoint: 40, enabled: true, emails: [""] };
+        setEditForm({ ...cfg, emails: cfg.emails.length > 0 ? [...cfg.emails] : [""] });
+        setEditingDevice(mac);
+    };
+
+    const handleSingleSave = async () => {
+        if (!editingDevice) return;
+        setSaving(true);
+        const ok = await saveDeviceConfig(editingDevice, editForm);
+        setSaving(false);
+        if (ok) {
+            showMsg(`✅ Alert saved for ${getDeviceName(editingDevice)}`, "success");
+            setEditingDevice(null);
+        } else {
+            showMsg("Failed to save", "error");
+        }
+    };
+
+    // --- Bulk operations ---
+    const toggleSelected = (mac: string) => {
+        setSelectedDevices(prev => prev.includes(mac) ? prev.filter(m => m !== mac) : [...prev, mac]);
+    };
+
+    const selectAll = () => {
+        setSelectedDevices(prev => prev.length === devices.length ? [] : devices.map(d => d.mac));
+    };
+
+    const openBulkModal = () => {
+        if (selectedDevices.length === 0) { showMsg("Select devices first", "error"); return; }
+        setBulkConfig({ tempSetpoint: 40, enabled: true, emails: [""] });
+        setShowBulkModal(true);
+    };
+
+    const handleBulkSave = async () => {
+        setSaving(true);
+        let successCount = 0;
+        for (const mac of selectedDevices) {
+            const ok = await saveDeviceConfig(mac, bulkConfig);
+            if (ok) successCount++;
+        }
+        setSaving(false);
+        showMsg(`✅ Alert config applied to ${successCount}/${selectedDevices.length} device(s)`, "success");
+        setShowBulkModal(false);
+        setSelectedDevices([]);
+    };
+
+    // Helper for email list editing
+    const EmailListEditor = ({ emails, onChange }: { emails: string[]; onChange: (emails: string[]) => void }) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {emails.map((email, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "8px" }}>
+                    <input type="email" className="input-field" placeholder="recipient@email.com"
+                        value={email} onChange={(e) => {
+                            const newEmails = [...emails];
+                            newEmails[idx] = e.target.value;
+                            onChange(newEmails);
+                        }}
+                        style={{ flex: 1 }}
+                    />
+                    {emails.length > 1 && (
+                        <button
+                            style={{ padding: "0 12px", background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}
+                            onClick={() => onChange(emails.filter((_, i) => i !== idx))}
+                        >✕</button>
+                    )}
+                </div>
+            ))}
+            <button
+                style={{ padding: "8px 14px", background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", cursor: "pointer", fontSize: "12px", alignSelf: "flex-start" }}
+                onClick={() => onChange([...emails, ""])}
+            >+ Add Email</button>
+        </div>
+    );
+
+    const configuredCount = Object.keys(deviceConfigs).length;
 
     return (
-        <div style={{ maxWidth: 750, margin: "0 auto" }}>
+        <div style={{ maxWidth: 800, margin: "0 auto" }}>
             {/* Tab Navigation */}
             <div className="alert-tabs">
-                <button className={`alert-tab ${activeTab === "config" ? "active" : ""}`} onClick={() => setActiveTab("config")}>
-                    ⚙️ Global Config
-                </button>
                 <button className={`alert-tab ${activeTab === "devices" ? "active" : ""}`} onClick={() => setActiveTab("devices")}>
                     📡 Devices ({devices.length})
                 </button>
@@ -179,101 +243,78 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
 
             {message && <div className={`alert-message ${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
 
-            {/* TAB: Global Config */}
-            {activeTab === "config" && (
-                <div className="glass-card alert-config">
-                    <div className="alert-config-header">
-                        <div className="alert-config-title">
-                            <span className="alert-icon">🔔</span>
-                            <h3>Global Alert Settings</h3>
-                        </div>
-                        <button
-                            onClick={() => setGlobalConfig({ ...globalConfig, enabled: !globalConfig.enabled })}
-                            className={`toggle-switch ${globalConfig.enabled ? "active" : ""}`}
-                        />
-                    </div>
-                    <div className="alert-form">
-                        <div className="form-group">
-                            <label>Alert Emails</label>
-                            {globalConfig.emails.map((email, idx) => (
-                                <div key={idx} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                                    <input type="email" className="input-field" placeholder="your@email.com"
-                                        value={email} onChange={(e) => {
-                                            const newEmails = [...globalConfig.emails];
-                                            newEmails[idx] = e.target.value;
-                                            setGlobalConfig({ ...globalConfig, emails: newEmails });
-                                        }} />
-                                    <button
-                                        style={{ padding: "0 12px", background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", cursor: "pointer" }}
-                                        onClick={() => {
-                                            const newEmails = globalConfig.emails.filter((_, i) => i !== idx);
-                                            setGlobalConfig({ ...globalConfig, emails: newEmails });
-                                        }}
-                                    >✕</button>
-                                </div>
-                            ))}
-                            <button
-                                style={{ padding: "8px 12px", background: "rgba(255,255,255,0.05)", color: "#fff", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", cursor: "pointer", fontSize: "12px", marginTop: "4px" }}
-                                onClick={() => setGlobalConfig({ ...globalConfig, emails: [...globalConfig.emails, ""] })}
-                            >+ Add Email</button>
-                        </div>
-                        <div className="form-group">
-                            <label>🌡️ Default Temperature Setpoint (°C)</label>
-                            <div className="slider-row">
-                                <input type="range" min="15" max="60" step="0.5" value={globalConfig.tempSetpoint}
-                                    onChange={(e) => setGlobalConfig({ ...globalConfig, tempSetpoint: Number(e.target.value) })} />
-                                <span className="slider-value" style={{ color: "var(--accent-red)" }}>{globalConfig.tempSetpoint}°C</span>
-                            </div>
-                            <div className="slider-hint">Default setpoint used for devices without custom configuration</div>
-                        </div>
-                        <div className="alert-buttons">
-                            <button onClick={saveGlobalConfig} disabled={saving} className="btn-primary">
-                                {saving ? "Saving..." : "💾 Save Config"}
-                            </button>
-                            <button onClick={checkAlerts} className="btn-secondary">🔍 Check Now</button>
-                        </div>
-                        <button onClick={sendTestEmail} disabled={testSending} className="btn-test-email">
-                            {testSending ? "⏳ Sending..." : "📧 Send Test Email"}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* TAB: Device Settings */}
+            {/* TAB: Device Alert Settings */}
             {activeTab === "devices" && (
-                <div className="glass-card" style={{ padding: 20 }}>
-                    <div className="alert-config-title" style={{ marginBottom: 16 }}>
-                        <span className="alert-icon">📡</span>
-                        <h3>Device Configuration</h3>
+                <div>
+                    {/* Toolbar */}
+                    <div className="glass-card" style={{ padding: "16px 20px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                            <button onClick={selectAll} className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>
+                                {selectedDevices.length === devices.length ? "☐ Deselect All" : "☑ Select All"}
+                            </button>
+                            <button onClick={openBulkModal} className="btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
+                                disabled={selectedDevices.length === 0}>
+                                ⚡ Bulk Configure ({selectedDevices.length})
+                            </button>
+                            <button onClick={checkAlerts} className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>
+                                🔍 Check Now
+                            </button>
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                            {configuredCount}/{devices.length} configured
+                        </div>
                     </div>
-                    <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>
-                        Set aliases and custom alert thresholds for each device. Devices without custom config use the global setpoint ({globalConfig.tempSetpoint}°C).
-                    </p>
+
+                    {/* Device Cards */}
                     {devices.length === 0 ? (
-                        <div className="alert-history-empty"><span>📡</span><p>No devices found yet</p></div>
+                        <div className="glass-card" style={{ padding: 48, textAlign: "center" }}>
+                            <div style={{ fontSize: 40, marginBottom: 12 }}>📡</div>
+                            <p style={{ color: "var(--text-secondary)" }}>No devices found yet</p>
+                        </div>
                     ) : (
                         <div className="device-config-list">
                             {devices.map((device) => {
                                 const mac = device.mac;
                                 const alias = aliases[mac] || "";
-                                const hasCustom = mac in deviceConfigs;
-                                const cfg = deviceConfigs[mac] || { tempSetpoint: globalConfig.tempSetpoint, enabled: true };
+                                const hasConfig = mac in deviceConfigs;
+                                const cfg = deviceConfigs[mac] || { tempSetpoint: 40, enabled: false, emails: [] };
+                                const isSelected = selectedDevices.includes(mac);
 
                                 return (
-                                    <div key={mac} className="device-config-item glass-card">
-                                        {/* Device Identity */}
+                                    <div key={mac} className={`device-config-item glass-card ${isSelected ? "selected-device" : ""}`}
+                                        style={isSelected ? { borderColor: "rgba(99,102,241,0.5)", boxShadow: "0 0 0 1px rgba(99,102,241,0.3)" } : {}}>
+                                        {/* Device Header */}
                                         <div className="device-config-header">
-                                            <div className="device-config-identity">
-                                                <span className="status-dot online" />
-                                                <div>
-                                                    <div className="device-config-name">
-                                                        {alias || mac.slice(-8)}
+                                            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                                <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(mac)}
+                                                    style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#6366f1" }} />
+                                                <div className="device-config-identity">
+                                                    <span className={`status-dot ${hasConfig && cfg.enabled ? "online" : "offline"}`} />
+                                                    <div>
+                                                        <div className="device-config-name">{alias || mac.slice(-8)}</div>
+                                                        <div className="device-config-mac">{mac}</div>
                                                     </div>
-                                                    <div className="device-config-mac">{mac}</div>
                                                 </div>
                                             </div>
-                                            {hasCustom && <span className="custom-badge">Custom</span>}
+                                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                                {hasConfig && <span className="custom-badge" style={{ fontSize: 10 }}>{cfg.enabled ? "🔔 Active" : "🔕 Muted"}</span>}
+                                                {hasConfig && cfg.emails.length > 0 && (
+                                                    <span style={{ fontSize: 10, padding: "2px 8px", background: "rgba(99,102,241,0.15)", color: "#818cf8", borderRadius: 6 }}>
+                                                        📧 {cfg.emails.length}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        {/* Quick info */}
+                                        {hasConfig && (
+                                            <div style={{ padding: "8px 16px", display: "flex", gap: "16px", fontSize: 12, color: "var(--text-secondary)" }}>
+                                                <span>🌡️ Setpoint: <strong style={{ color: "var(--accent-red)" }}>{cfg.tempSetpoint}°C</strong></span>
+                                                {cfg.emails.length > 0 && (
+                                                    <span>📧 {cfg.emails.slice(0, 2).join(", ")}{cfg.emails.length > 2 ? ` +${cfg.emails.length - 2}` : ""}</span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         {/* Alias Editor */}
                                         <div className="device-config-row">
@@ -293,40 +334,15 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                                             )}
                                         </div>
 
-                                        {/* Setpoint */}
-                                        <div className="device-config-row">
-                                            <span className="device-config-label">🌡️ Setpoint</span>
-                                            <div className="device-setpoint-row">
-                                                <input type="range" min="15" max="60" step="0.5" value={cfg.tempSetpoint}
-                                                    onChange={(e) => setDeviceConfigs({
-                                                        ...deviceConfigs,
-                                                        [mac]: { ...cfg, tempSetpoint: Number(e.target.value) },
-                                                    })} />
-                                                <span className="slider-value" style={{ color: "var(--accent-red)", fontSize: 14, minWidth: 50 }}>
-                                                    {cfg.tempSetpoint}°C
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* Enable / Actions */}
+                                        {/* Actions */}
                                         <div className="device-config-actions">
-                                            <label className="device-enable-label">
-                                                <button
-                                                    onClick={() => setDeviceConfigs({
-                                                        ...deviceConfigs,
-                                                        [mac]: { ...cfg, enabled: !cfg.enabled },
-                                                    })}
-                                                    className={`toggle-switch small ${cfg.enabled ? "active" : ""}`}
-                                                />
-                                                <span>{cfg.enabled ? "Enabled" : "Disabled"}</span>
-                                            </label>
                                             <div style={{ display: "flex", gap: 8 }}>
-                                                <button className="btn-device-save" onClick={() => saveDeviceConfig(mac, cfg)}>
-                                                    💾 Save
+                                                <button className="btn-device-save" onClick={() => openDeviceEdit(mac)}>
+                                                    ⚙️ Configure Alert
                                                 </button>
-                                                {hasCustom && (
+                                                {hasConfig && (
                                                     <button className="btn-device-reset" onClick={() => removeDeviceConfig(mac)}>
-                                                        ↩️ Reset
+                                                        ↩️ Remove
                                                     </button>
                                                 )}
                                             </div>
@@ -378,6 +394,96 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Single Device Config Modal */}
+            {editingDevice && (
+                <div className="admin-modal-overlay" onClick={() => setEditingDevice(null)}>
+                    <div className="admin-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                        <div className="admin-modal-header">
+                            <h3>⚙️ Alert Config: {getDeviceName(editingDevice)}</h3>
+                            <button className="admin-modal-close" onClick={() => setEditingDevice(null)}>✕</button>
+                        </div>
+                        <div className="admin-modal-body">
+                            <div className="admin-form-group">
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                    <label>Enable Alerts</label>
+                                    <button
+                                        onClick={() => setEditForm({ ...editForm, enabled: !editForm.enabled })}
+                                        className={`toggle-switch ${editForm.enabled ? "active" : ""}`}
+                                    />
+                                </div>
+                            </div>
+                            <div className="admin-form-group">
+                                <label>🌡️ Temperature Setpoint (°C)</label>
+                                <div className="slider-row">
+                                    <input type="range" min="15" max="60" step="0.5" value={editForm.tempSetpoint}
+                                        onChange={(e) => setEditForm({ ...editForm, tempSetpoint: Number(e.target.value) })} />
+                                    <span className="slider-value" style={{ color: "var(--accent-red)" }}>{editForm.tempSetpoint}°C</span>
+                                </div>
+                                <div className="slider-hint">Alert triggers when temperature exceeds this value</div>
+                            </div>
+                            <div className="admin-form-group">
+                                <label>📧 Notification Emails</label>
+                                <EmailListEditor emails={editForm.emails} onChange={(emails) => setEditForm({ ...editForm, emails })} />
+                            </div>
+                            <button onClick={() => sendTestEmail(editForm.emails)} disabled={testSending}
+                                style={{ width: "100%", padding: "10px", background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", cursor: "pointer", fontSize: "13px", marginTop: 8 }}>
+                                {testSending ? "⏳ Sending..." : "📧 Send Test Email"}
+                            </button>
+                        </div>
+                        <div className="admin-modal-footer">
+                            <button className="admin-cancel-btn" onClick={() => setEditingDevice(null)}>Cancel</button>
+                            <button className="admin-save-btn" onClick={handleSingleSave} disabled={saving}>
+                                {saving ? "Saving..." : "💾 Save Config"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Config Modal */}
+            {showBulkModal && (
+                <div className="admin-modal-overlay" onClick={() => setShowBulkModal(false)}>
+                    <div className="admin-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+                        <div className="admin-modal-header">
+                            <h3>⚡ Bulk Configure ({selectedDevices.length} devices)</h3>
+                            <button className="admin-modal-close" onClick={() => setShowBulkModal(false)}>✕</button>
+                        </div>
+                        <div className="admin-modal-body">
+                            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16, padding: "10px 14px", background: "rgba(99,102,241,0.08)", borderRadius: 10, border: "1px solid rgba(99,102,241,0.15)" }}>
+                                Applying to: {selectedDevices.map(m => getDeviceName(m)).join(", ")}
+                            </div>
+                            <div className="admin-form-group">
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                    <label>Enable Alerts</label>
+                                    <button
+                                        onClick={() => setBulkConfig({ ...bulkConfig, enabled: !bulkConfig.enabled })}
+                                        className={`toggle-switch ${bulkConfig.enabled ? "active" : ""}`}
+                                    />
+                                </div>
+                            </div>
+                            <div className="admin-form-group">
+                                <label>🌡️ Temperature Setpoint (°C)</label>
+                                <div className="slider-row">
+                                    <input type="range" min="15" max="60" step="0.5" value={bulkConfig.tempSetpoint}
+                                        onChange={(e) => setBulkConfig({ ...bulkConfig, tempSetpoint: Number(e.target.value) })} />
+                                    <span className="slider-value" style={{ color: "var(--accent-red)" }}>{bulkConfig.tempSetpoint}°C</span>
+                                </div>
+                            </div>
+                            <div className="admin-form-group">
+                                <label>📧 Notification Emails</label>
+                                <EmailListEditor emails={bulkConfig.emails} onChange={(emails) => setBulkConfig({ ...bulkConfig, emails })} />
+                            </div>
+                        </div>
+                        <div className="admin-modal-footer">
+                            <button className="admin-cancel-btn" onClick={() => setShowBulkModal(false)}>Cancel</button>
+                            <button className="admin-save-btn" onClick={handleBulkSave} disabled={saving}>
+                                {saving ? "Applying..." : `✅ Apply to ${selectedDevices.length} Device(s)`}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

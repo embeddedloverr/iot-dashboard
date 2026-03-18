@@ -167,7 +167,7 @@ export default function SubusersPage() {
         } catch { showMsg("Network error", "error"); }
     };
 
-    const getDeviceName = (mac: string) => aliases[mac] || mac.slice(-8);
+    const getDeviceName = (mac: string) => aliases[mac] || mac?.slice(-8) || "Unknown";
 
     if (!user || user.role === "subuser") return null;
 

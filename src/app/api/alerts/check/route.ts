@@ -8,28 +8,20 @@ export async function GET() {
     try {
         const db = await getDb();
 
-        // Get global alert config
-        const config = await db
-            .collection("alert_config")
-            .findOne({ _id: "default" as unknown as import("mongodb").ObjectId });
-
-        if (!config || !config.enabled) {
-            return NextResponse.json({
-                success: true,
-                message: "Alerts not enabled",
-                triggered: false,
-            });
+        // Get per-device alert configs (each has its own emails, setpoint, enabled)
+        const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
+        const deviceConfigMap: Record<string, { tempSetpoint: number; enabled: boolean; emails: string[] }> = {};
+        for (const dc of deviceConfigs) {
+            deviceConfigMap[dc.mac] = { tempSetpoint: dc.tempSetpoint, enabled: dc.enabled, emails: dc.emails || [] };
         }
 
-        // Handle legacy config
-        const emailList: string[] = config.emails || (config.email ? [config.email] : []);
-        const toList = emailList.join(",");
-
-        // Get per-device alert configs
-        const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
-        const deviceConfigMap: Record<string, { tempSetpoint: number; enabled: boolean }> = {};
-        for (const dc of deviceConfigs) {
-            deviceConfigMap[dc.mac] = { tempSetpoint: dc.tempSetpoint, enabled: dc.enabled };
+        // If no devices have alert configs, nothing to check
+        if (Object.keys(deviceConfigMap).length === 0) {
+            return NextResponse.json({
+                success: true,
+                message: "No device alert configs found",
+                triggered: false,
+            });
         }
 
         // Get device aliases for readable emails
@@ -59,8 +51,8 @@ export async function GET() {
             ])
             .toArray();
 
-        const tempAlerts: Array<{ mac: string; alias: string; temp: number; setpoint: number; ts: string }> = [];
-        const offlineAlerts: Array<{ mac: string; alias: string; lastSeen: Date; minutesAgo: number }> = [];
+        const tempAlerts: Array<{ mac: string; alias: string; temp: number; setpoint: number; ts: string; emails: string[] }> = [];
+        const offlineAlerts: Array<{ mac: string; alias: string; lastSeen: Date; minutesAgo: number; emails: string[] }> = [];
 
         const now = Date.now();
 
@@ -72,44 +64,49 @@ export async function GET() {
             const lastSeenTime = new Date(reading.mongoTs).getTime();
             const isOffline = (now - lastSeenTime) > OFFLINE_THRESHOLD_MS;
 
-            // Check temperature alerts
+            // Check if device has an alert config
             const deviceCfg = deviceConfigMap[mac];
-            const setpoint = deviceCfg ? deviceCfg.tempSetpoint : config.tempSetpoint;
-            const deviceEnabled = deviceCfg ? deviceCfg.enabled : true;
+            if (!deviceCfg || !deviceCfg.enabled) continue;
 
-            if (deviceEnabled && temp >= setpoint) {
-                tempAlerts.push({ mac, alias, temp, setpoint, ts });
+            const setpoint = deviceCfg.tempSetpoint;
+            const emails = deviceCfg.emails || [];
+
+            // Check temperature alerts
+            if (temp >= setpoint && emails.length > 0) {
+                tempAlerts.push({ mac, alias, temp, setpoint, ts, emails });
             }
 
             // Check offline status
-            if (isOffline) {
+            if (isOffline && emails.length > 0) {
                 const minutesAgo = Math.floor((now - lastSeenTime) / 60000);
-                offlineAlerts.push({ mac, alias, lastSeen: new Date(reading.mongoTs), minutesAgo });
+                offlineAlerts.push({ mac, alias, lastSeen: new Date(reading.mongoTs), minutesAgo, emails });
             }
         }
 
         let triggered = false;
 
-        // Check cooldown — don't send more than once every 5 minutes
-        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-        const inCooldown = config.lastTriggered && new Date(config.lastTriggered) > fiveMinAgo;
+        // Send temperature alerts (per-device cooldown: 5 minutes)
+        if (tempAlerts.length > 0) {
+            const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-        // Send temperature alerts
-        if (tempAlerts.length > 0 && !inCooldown) {
             for (const alert of tempAlerts) {
+                // Check per-device cooldown
+                const recentAlert = await db.collection("alert_history").findOne({
+                    type: "temperature",
+                    mac: alert.mac,
+                    triggeredAt: { $gt: fiveMinAgo },
+                });
+                if (recentAlert) continue;
+
                 const deviceLabel = alert.alias !== alert.mac ? `${alert.alias} (${alert.mac})` : alert.mac;
                 const html = buildAlertEmailHtml(deviceLabel, alert.temp, alert.setpoint, alert.ts);
+                const toList = alert.emails.join(",");
                 try {
-                    if (toList) {
-                        await sendAlertEmail(toList, `🌡️ Temp Alert: ${alert.temp}°C on ${alert.alias}`, html);
-                    }
+                    await sendAlertEmail(toList, `🌡️ Temp Alert: ${alert.temp}°C on ${alert.alias}`, html);
                 } catch (emailErr) {
                     console.error("Failed to send temp alert email:", emailErr);
                 }
-            }
 
-            // Log each alert to history
-            for (const alert of tempAlerts) {
                 await db.collection("alert_history").insertOne({
                     type: "temperature",
                     mac: alert.mac,
@@ -121,14 +118,13 @@ export async function GET() {
                     sensorTs: alert.ts,
                     details: `${alert.alias}: ${alert.temp}°C exceeded setpoint ${alert.setpoint}°C`,
                 });
+                triggered = true;
             }
-            triggered = true;
         }
 
-        // Send offline alerts (separate cooldown check per device)
+        // Send offline alerts (per-device, 1 hour cooldown)
         if (offlineAlerts.length > 0) {
             for (const offlineDevice of offlineAlerts) {
-                // Check if we already sent an offline alert for this device recently (1 hour cooldown)
                 const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
                 const recentOfflineAlert = await db.collection("alert_history").findOne({
                     type: "offline",
@@ -165,10 +161,9 @@ export async function GET() {
                         </div>
                     </div>`;
 
+                    const toList = offlineDevice.emails.join(",");
                     try {
-                        if (toList) {
-                            await sendAlertEmail(toList, `⚠️ Device Offline: ${offlineDevice.alias} — no data for ${timeAgo}`, html);
-                        }
+                        await sendAlertEmail(toList, `⚠️ Device Offline: ${offlineDevice.alias} — no data for ${timeAgo}`, html);
                     } catch (emailErr) {
                         console.error("Failed to send offline alert:", emailErr);
                     }
@@ -189,20 +184,12 @@ export async function GET() {
             }
         }
 
-        // Update last triggered timestamp
-        if (triggered) {
-            await db.collection("alert_config").updateOne(
-                { _id: "default" as unknown as import("mongodb").ObjectId },
-                { $set: { lastTriggered: new Date() } }
-            );
-        }
-
         return NextResponse.json({
             success: true,
             triggered,
             tempAlerts: tempAlerts.length,
             offlineAlerts: offlineAlerts.length,
-            alerts: tempAlerts,
+            alerts: tempAlerts.map(a => ({ mac: a.mac, alias: a.alias, temp: a.temp, setpoint: a.setpoint })),
             offlineDevices: offlineAlerts.map((d) => ({ mac: d.mac, alias: d.alias, minutesAgo: d.minutesAgo })),
         });
     } catch (error) {

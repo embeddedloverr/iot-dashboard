@@ -12,9 +12,9 @@ export async function GET() {
 
         // Get per-device configs
         const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
-        const deviceMap: Record<string, { tempSetpoint: number; enabled: boolean }> = {};
+        const deviceMap: Record<string, { tempSetpoint: number; enabled: boolean; emails: string[] }> = {};
         for (const doc of deviceConfigs) {
-            deviceMap[doc.mac] = { tempSetpoint: doc.tempSetpoint, enabled: doc.enabled };
+            deviceMap[doc.mac] = { tempSetpoint: doc.tempSetpoint, enabled: doc.enabled, emails: doc.emails || [] };
         }
 
         return NextResponse.json({
@@ -34,7 +34,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { mac, tempSetpoint, enabled } = body;
+        const { mac, tempSetpoint, enabled, emails } = body;
 
         if (!mac || typeof tempSetpoint !== "number") {
             return NextResponse.json(
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
         const db = await getDb();
         await db.collection("device_alert_config").updateOne(
             { mac },
-            { $set: { mac, tempSetpoint, enabled: enabled !== false, updatedAt: new Date() } },
+            { $set: { mac, tempSetpoint, enabled: enabled !== false, emails: emails || [], updatedAt: new Date() } },
             { upsert: true }
         );
 
