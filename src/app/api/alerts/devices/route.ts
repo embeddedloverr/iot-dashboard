@@ -1,28 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { ObjectId } from "mongodb";
 
-// GET: Retrieve all per-device alert configs
-export async function GET() {
+// Helper: get user's allowed devices
+async function getUserDevices(request: NextRequest): Promise<{ userId: string; role: string; devices: string[] } | null> {
+    const session = getSession(request);
+    if (!session) return null;
+
+    const db = await getDb();
+    const user = await db.collection("users").findOne(
+        { _id: new ObjectId(session.id) },
+        { projection: { role: 1, devices: 1 } }
+    );
+    if (!user) return null;
+
+    const isAdmin = user.role === "superadmin" || user.role === "admin";
+    return {
+        userId: session.id,
+        role: user.role,
+        devices: isAdmin ? [] : (user.devices || []), // empty = all devices for admins
+    };
+}
+
+// GET: Retrieve per-device alert configs (filtered by user's devices)
+export async function GET(request: NextRequest) {
     try {
-        const db = await getDb();
+        const userInfo = await getUserDevices(request);
+        if (!userInfo) {
+            return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+        }
 
-        // Get global config
-        const globalConfig = await db.collection("alert_config")
-            .findOne({ _id: "default" as unknown as import("mongodb").ObjectId });
+        const db = await getDb();
 
         // Get per-device configs
         const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
         const deviceMap: Record<string, { tempSetpoint: number; enabled: boolean; emails: string[] }> = {};
         for (const doc of deviceConfigs) {
+            // If user is not admin, only return configs for their assigned devices
+            if (userInfo.devices.length > 0 && !userInfo.devices.includes(doc.mac)) continue;
             deviceMap[doc.mac] = { tempSetpoint: doc.tempSetpoint, enabled: doc.enabled, emails: doc.emails || [] };
         }
 
         return NextResponse.json({
             success: true,
-            data: {
-                global: globalConfig || { email: "", tempSetpoint: 40, enabled: false },
-                devices: deviceMap,
-            },
+            data: { devices: deviceMap },
         });
     } catch (error) {
         console.error("Error fetching device alerts:", error);
@@ -30,9 +52,14 @@ export async function GET() {
     }
 }
 
-// POST: Save per-device alert config
+// POST: Save per-device alert config (user can only configure their assigned devices)
 export async function POST(request: NextRequest) {
     try {
+        const userInfo = await getUserDevices(request);
+        if (!userInfo) {
+            return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+        }
+
         const body = await request.json();
         const { mac, tempSetpoint, enabled, emails } = body;
 
@@ -43,10 +70,18 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Regular users can only configure their assigned devices
+        if (userInfo.devices.length > 0 && !userInfo.devices.includes(mac)) {
+            return NextResponse.json(
+                { success: false, error: "You do not have access to this device" },
+                { status: 403 }
+            );
+        }
+
         const db = await getDb();
         await db.collection("device_alert_config").updateOne(
             { mac },
-            { $set: { mac, tempSetpoint, enabled: enabled !== false, emails: emails || [], updatedAt: new Date() } },
+            { $set: { mac, tempSetpoint, enabled: enabled !== false, emails: emails || [], updatedAt: new Date(), updatedBy: userInfo.userId } },
             { upsert: true }
         );
 
@@ -57,13 +92,26 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// DELETE: Remove per-device alert config (falls back to global)
+// DELETE: Remove per-device alert config
 export async function DELETE(request: NextRequest) {
     try {
+        const userInfo = await getUserDevices(request);
+        if (!userInfo) {
+            return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+        }
+
         const { searchParams } = new URL(request.url);
         const mac = searchParams.get("mac");
         if (!mac) {
             return NextResponse.json({ success: false, error: "mac required" }, { status: 400 });
+        }
+
+        // Regular users can only delete configs for their assigned devices
+        if (userInfo.devices.length > 0 && !userInfo.devices.includes(mac)) {
+            return NextResponse.json(
+                { success: false, error: "You do not have access to this device" },
+                { status: 403 }
+            );
         }
 
         const db = await getDb();
