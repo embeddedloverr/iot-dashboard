@@ -41,6 +41,7 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
     const [editingAlias, setEditingAlias] = useState<string | null>(null);
     const [aliasInput, setAliasInput] = useState("");
     const [activeTab, setActiveTab] = useState<"devices" | "history">("devices");
+    const [debugLog, setDebugLog] = useState<string[] | null>(null);
 
     // Bulk config state
     const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
@@ -144,6 +145,9 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
             const res = await fetch("/api/alerts/check");
             const data = await res.json();
 
+            // Store debug log for visible display
+            setDebugLog(data.debug || []);
+
             // Build diagnostic message
             let msg = "";
             if (data.triggered) {
@@ -169,14 +173,6 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
 
             showMsg(msg, data.triggered ? "error" : "success", 8000);
             if (data.triggered) fetchHistory();
-
-            // Log full debug to console for developer inspection
-            if (data.debug) {
-                console.log("🔍 Alert Check Debug:", data.debug);
-            }
-            if (data.smtpStatus) {
-                console.log("📧 SMTP Status:", data.smtpStatus);
-            }
         } catch { showMsg("Failed to check", "error"); }
     };
 
@@ -299,6 +295,26 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                             {configuredCount}/{devices.length} configured
                         </div>
                     </div>
+
+                    {/* Debug Panel (shows after Check Now) */}
+                    {debugLog && debugLog.length > 0 && (
+                        <div className="glass-card" style={{ padding: "12px 16px", marginBottom: 16, fontSize: 11, lineHeight: 1.6, position: "relative" }}>
+                            <button onClick={() => setDebugLog(null)}
+                                style={{ position: "absolute", top: 8, right: 12, background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14 }}>✕</button>
+                            <div style={{ fontWeight: 600, marginBottom: 6, color: "#818cf8", fontSize: 12 }}>🔍 Alert Check Debug</div>
+                            <div style={{ fontFamily: "monospace", whiteSpace: "pre-wrap", color: "var(--text-secondary)" }}>
+                                {debugLog.map((line, i) => (
+                                    <div key={i} style={{
+                                        color: line.includes("ALERT TRIGGERED") ? "#ef4444" :
+                                            line.includes("EMAIL SENT OK") ? "#10b981" :
+                                            line.includes("EMAIL FAILED") || line.includes("NOT SET") ? "#ef4444" :
+                                            line.includes("COOLDOWN") ? "#f59e0b" :
+                                            line.includes("OK:") ? "#10b981" : "var(--text-secondary)"
+                                    }}>{line}</div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Device Cards */}
                     {devices.length === 0 ? (
