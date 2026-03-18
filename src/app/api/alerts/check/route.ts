@@ -69,10 +69,17 @@ export async function GET() {
         const now = Date.now();
 
         for (const reading of latestReadings) {
-            const temp = reading.latestDoc.json.temp_c;
+            const jsonDoc = reading.latestDoc.json;
+            const temp = jsonDoc?.temp_c;
             const mac = reading._id;
-            const ts = reading.latestDoc.json.ts;
+            const ts = jsonDoc?.ts || new Date(reading.mongoTs).toISOString();
             const alias = aliasMap[mac] || mac;
+            
+            if (temp === undefined || temp === null) {
+                debug.push(`Device ${mac} (${alias}): INVALID DATA (json or temp_c is null), skipping`);
+                continue;
+            }
+
             const lastSeenTime = new Date(reading.mongoTs).getTime();
             const isOffline = (now - lastSeenTime) > OFFLINE_THRESHOLD_MS;
 
