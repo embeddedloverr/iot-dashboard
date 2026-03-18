@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 interface User {
     id: string;
     username: string;
-    role: "superadmin" | "admin" | "user";
+    role: "superadmin" | "admin" | "user" | "subuser";
     devices: string[];
 }
 

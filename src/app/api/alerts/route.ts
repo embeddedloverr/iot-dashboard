@@ -5,19 +5,27 @@ import { getDb } from "@/lib/db";
 export async function GET() {
     try {
         const db = await getDb();
-        const config = await db.collection("alert_config").findOne({ _id: "default" as unknown as import("mongodb").ObjectId });
+        let config = await db.collection("alert_config").findOne({ _id: "default" as unknown as import("mongodb").ObjectId });
 
         if (!config) {
             return NextResponse.json({
                 success: true,
                 data: {
-                    email: "",
+                    emails: [],
                     tempSetpoint: 40,
                     humSetpoint: 80,
                     enabled: false,
                     lastTriggered: null,
                 },
             });
+        }
+
+        // Migrate legacy single email to emails array
+        if (config.email && (!config.emails || config.emails.length === 0)) {
+            config.emails = [config.email];
+            delete config.email;
+        } else if (!config.emails) {
+            config.emails = [];
         }
 
         return NextResponse.json({ success: true, data: config });
@@ -34,11 +42,11 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { email, tempSetpoint, humSetpoint, enabled } = body;
+        const { emails, tempSetpoint, humSetpoint, enabled } = body;
 
-        if (!email || typeof tempSetpoint !== "number") {
+        if (!Array.isArray(emails) || typeof tempSetpoint !== "number") {
             return NextResponse.json(
-                { success: false, error: "email and tempSetpoint are required" },
+                { success: false, error: "emails array and tempSetpoint are required" },
                 { status: 400 }
             );
         }
@@ -48,12 +56,13 @@ export async function POST(request: NextRequest) {
             { _id: "default" as unknown as import("mongodb").ObjectId },
             {
                 $set: {
-                    email,
+                    emails,
                     tempSetpoint,
                     humSetpoint: humSetpoint || 80,
                     enabled: enabled !== false,
                     updatedAt: new Date(),
                 },
+                $unset: { email: "" } // remove legacy field
             },
             { upsert: true }
         );

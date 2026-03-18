@@ -16,7 +16,7 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 export interface TokenPayload {
     id: string;
     username: string;
-    role: "superadmin" | "admin" | "user";
+    role: "superadmin" | "admin" | "user" | "subuser";
 }
 
 export function signToken(payload: TokenPayload): string {

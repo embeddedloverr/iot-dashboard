@@ -6,14 +6,16 @@ import { sendAlertEmail } from "@/lib/mailer";
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { email } = body;
+        const { emails } = body;
 
-        if (!email) {
+        if (!Array.isArray(emails) || emails.length === 0) {
             return NextResponse.json(
-                { success: false, error: "Email address is required" },
+                { success: false, error: "Emails array is required and cannot be empty" },
                 { status: 400 }
             );
         }
+        
+        const toList = emails.join(",");
 
         const html = `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; background: #0a0a1a; color: #e8e8ff; border-radius: 16px; overflow: hidden;">
@@ -39,16 +41,16 @@ export async function POST(request: NextRequest) {
             </div>
         </div>`;
 
-        await sendAlertEmail(email, "🌡️ SmartDwell IoT — Test Email", html);
+        await sendAlertEmail(toList, "🌡️ SmartDwell IoT — Test Email", html);
 
         // Log to alert_history
         const db = await getDb();
         await db.collection("alert_history").insertOne({
             type: "test",
-            email,
+            email: toList,
             subject: "Test Email",
             triggeredAt: new Date(),
-            details: "Manual test email sent successfully",
+            details: `Manual test email sent successfully to ${emails.length} recipients`,
         });
 
         return NextResponse.json({ success: true, message: "Test email sent successfully" });

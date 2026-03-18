@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 
 interface GlobalConfig {
-    email: string;
+    emails: string[];
     tempSetpoint: number;
     enabled: boolean;
     lastTriggered?: string | null;
@@ -39,7 +39,7 @@ interface AlertConfigPanelProps {
 
 export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: AlertConfigPanelProps) {
     const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
-        email: "", tempSetpoint: 40, enabled: false, lastTriggered: null,
+        emails: [], tempSetpoint: 40, enabled: false, lastTriggered: null,
     });
     const [deviceConfigs, setDeviceConfigs] = useState<Record<string, DeviceAlertConfig>>({});
     const [saving, setSaving] = useState(false);
@@ -129,12 +129,13 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
     };
 
     const sendTestEmail = async () => {
-        if (!globalConfig.email) { showMsg("Enter email first", "error"); return; }
+        const validEmails = globalConfig.emails.filter(e => e.trim() !== "");
+        if (validEmails.length === 0) { showMsg("Enter at least one email first", "error"); return; }
         setTestSending(true);
         try {
             const res = await fetch("/api/alerts/test", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: globalConfig.email }),
+                body: JSON.stringify({ emails: validEmails }),
             });
             const data = await res.json();
             showMsg(data.success ? "✅ Test email sent!" : `❌ ${data.error}`, data.success ? "success" : "error", 6000);
@@ -193,9 +194,28 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                     </div>
                     <div className="alert-form">
                         <div className="form-group">
-                            <label>Alert Email</label>
-                            <input type="email" className="input-field" placeholder="your@email.com"
-                                value={globalConfig.email} onChange={(e) => setGlobalConfig({ ...globalConfig, email: e.target.value })} />
+                            <label>Alert Emails</label>
+                            {globalConfig.emails.map((email, idx) => (
+                                <div key={idx} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                                    <input type="email" className="input-field" placeholder="your@email.com"
+                                        value={email} onChange={(e) => {
+                                            const newEmails = [...globalConfig.emails];
+                                            newEmails[idx] = e.target.value;
+                                            setGlobalConfig({ ...globalConfig, emails: newEmails });
+                                        }} />
+                                    <button
+                                        style={{ padding: "0 12px", background: "rgba(239,68,68,0.2)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", cursor: "pointer" }}
+                                        onClick={() => {
+                                            const newEmails = globalConfig.emails.filter((_, i) => i !== idx);
+                                            setGlobalConfig({ ...globalConfig, emails: newEmails });
+                                        }}
+                                    >✕</button>
+                                </div>
+                            ))}
+                            <button
+                                style={{ padding: "8px 12px", background: "rgba(255,255,255,0.05)", color: "#fff", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", cursor: "pointer", fontSize: "12px", marginTop: "4px" }}
+                                onClick={() => setGlobalConfig({ ...globalConfig, emails: [...globalConfig.emails, ""] })}
+                            >+ Add Email</button>
                         </div>
                         <div className="form-group">
                             <label>🌡️ Default Temperature Setpoint (°C)</label>

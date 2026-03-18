@@ -57,6 +57,16 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
                         </button>
                     ))}
 
+                    {user && user.role !== "subuser" && (
+                        <button
+                            onClick={() => router.push("/subusers")}
+                            className={`sidebar-nav-item ${activeSection === "subusers" ? "active" : ""}`}
+                        >
+                            <span className="nav-icon">👥</span>
+                            <span>Subusers</span>
+                        </button>
+                    )}
+
                     {isAdmin && (
                         <button
                             onClick={() => router.push("/admin")}
@@ -73,7 +83,7 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
                     <div className="sidebar-user">
                         <div className="sidebar-user-info">
                             <span className="sidebar-user-avatar">
-                                {user.role === "superadmin" ? "👑" : user.role === "admin" ? "🛡️" : "👤"}
+                                {user.role === "superadmin" ? "👑" : user.role === "admin" ? "🛡️" : user.role === "subuser" ? "🧒" : "👤"}
                             </span>
                             <div className="sidebar-user-details">
                                 <span className="sidebar-user-name">{user.username}</span>

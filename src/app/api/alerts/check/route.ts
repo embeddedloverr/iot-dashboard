@@ -21,6 +21,10 @@ export async function GET() {
             });
         }
 
+        // Handle legacy config
+        const emailList: string[] = config.emails || (config.email ? [config.email] : []);
+        const toList = emailList.join(",");
+
         // Get per-device alert configs
         const deviceConfigs = await db.collection("device_alert_config").find({}).toArray();
         const deviceConfigMap: Record<string, { tempSetpoint: number; enabled: boolean }> = {};
@@ -96,7 +100,9 @@ export async function GET() {
                 const deviceLabel = alert.alias !== alert.mac ? `${alert.alias} (${alert.mac})` : alert.mac;
                 const html = buildAlertEmailHtml(deviceLabel, alert.temp, alert.setpoint, alert.ts);
                 try {
-                    await sendAlertEmail(config.email, `🌡️ Temp Alert: ${alert.temp}°C on ${alert.alias}`, html);
+                    if (toList) {
+                        await sendAlertEmail(toList, `🌡️ Temp Alert: ${alert.temp}°C on ${alert.alias}`, html);
+                    }
                 } catch (emailErr) {
                     console.error("Failed to send temp alert email:", emailErr);
                 }
@@ -110,7 +116,7 @@ export async function GET() {
                     alias: alert.alias,
                     temp: alert.temp,
                     setpoint: alert.setpoint,
-                    email: config.email,
+                    email: toList,
                     triggeredAt: new Date(),
                     sensorTs: alert.ts,
                     details: `${alert.alias}: ${alert.temp}°C exceeded setpoint ${alert.setpoint}°C`,
@@ -160,7 +166,9 @@ export async function GET() {
                     </div>`;
 
                     try {
-                        await sendAlertEmail(config.email, `⚠️ Device Offline: ${offlineDevice.alias} — no data for ${timeAgo}`, html);
+                        if (toList) {
+                            await sendAlertEmail(toList, `⚠️ Device Offline: ${offlineDevice.alias} — no data for ${timeAgo}`, html);
+                        }
                     } catch (emailErr) {
                         console.error("Failed to send offline alert:", emailErr);
                     }
@@ -169,7 +177,7 @@ export async function GET() {
                         type: "offline",
                         mac: offlineDevice.mac,
                         alias: offlineDevice.alias,
-                        email: config.email,
+                        email: toList,
                         triggeredAt: new Date(),
                         lastSeen: offlineDevice.lastSeen,
                         minutesAgo: offlineDevice.minutesAgo,
