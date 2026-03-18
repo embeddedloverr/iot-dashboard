@@ -41,8 +41,10 @@ export default function DeviceCard({
     mac, alias, temp_c, hum_rh, rssi, ssid, ts, mongoTs, onClick, selected = false,
 }: DeviceCardProps) {
     const offline = isOffline(mongoTs);
-    const tempColor = temp_c >= 45 ? "#ef4444" : temp_c >= 38 ? "#f59e0b" : "#10b981";
-    const humColor = hum_rh >= 85 || hum_rh <= 20 ? "#ef4444" : hum_rh >= 70 || hum_rh <= 30 ? "#f59e0b" : "#3b82f6";
+    const t = temp_c ?? 0;
+    const h = hum_rh ?? 0;
+    const tempColor = t >= 45 ? "#ef4444" : t >= 38 ? "#f59e0b" : "#10b981";
+    const humColor = h >= 85 || h <= 20 ? "#ef4444" : h >= 70 || h <= 30 ? "#f59e0b" : "#3b82f6";
     const shortMac = mac?.slice(-8) || "Unknown";
     const name = alias || shortMac;
 
@@ -74,10 +76,10 @@ export default function DeviceCard({
                         <span className="dc-metric-label">TEMP</span>
                     </div>
                     <div className="dc-metric-val">
-                        <span className="dc-val" style={{ color: offline ? "#666" : tempColor }}>{temp_c.toFixed(1)}</span>
+                        <span className="dc-val" style={{ color: offline ? "#666" : tempColor }}>{t.toFixed(1)}</span>
                         <span className="dc-unit">°C</span>
                     </div>
-                    <div className="dc-bar"><div className="dc-bar-fill" style={{ width: `${Math.min((temp_c / 50) * 100, 100)}%`, background: tempColor, opacity: offline ? 0.3 : 1 }} /></div>
+                    <div className="dc-bar"><div className="dc-bar-fill" style={{ width: `${Math.min((t / 50) * 100, 100)}%`, background: tempColor, opacity: offline ? 0.3 : 1 }} /></div>
                 </div>
 
                 <div className="dc-sep" />
@@ -88,10 +90,10 @@ export default function DeviceCard({
                         <span className="dc-metric-label">HUM</span>
                     </div>
                     <div className="dc-metric-val">
-                        <span className="dc-val" style={{ color: offline ? "#666" : humColor }}>{hum_rh.toFixed(1)}</span>
+                        <span className="dc-val" style={{ color: offline ? "#666" : humColor }}>{h.toFixed(1)}</span>
                         <span className="dc-unit">%</span>
                     </div>
-                    <div className="dc-bar"><div className="dc-bar-fill" style={{ width: `${Math.min(hum_rh, 100)}%`, background: humColor, opacity: offline ? 0.3 : 1 }} /></div>
+                    <div className="dc-bar"><div className="dc-bar-fill" style={{ width: `${Math.min(h, 100)}%`, background: humColor, opacity: offline ? 0.3 : 1 }} /></div>
                 </div>
             </div>
 
