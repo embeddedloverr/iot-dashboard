@@ -43,8 +43,8 @@ export default function DeviceSelector({ devices, aliases, selectedMac, onSelect
                             >
                                 <span className="status-dot online" />
                                 <div>
-                                    <div className="device-mac">{alias || device.mac.slice(-8)}</div>
-                                    {alias && <div className="device-meta">{device.mac.slice(-8)}</div>}
+                                    <div className="device-mac">{alias || device.mac?.slice(-8) || "Unknown"}</div>
+                                    {alias && <div className="device-meta">{device.mac?.slice(-8)}</div>}
                                     <div className="device-meta">{device.ssid} · {device.count.toLocaleString()} readings</div>
                                 </div>
                             </button>

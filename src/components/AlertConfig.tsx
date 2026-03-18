@@ -297,7 +297,7 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
                                                 <div className="device-config-identity">
                                                     <span className={`status-dot ${hasConfig && cfg.enabled ? "online" : "offline"}`} />
                                                     <div>
-                                                        <div className="device-config-name">{alias || mac.slice(-8)}</div>
+                                                        <div className="device-config-name">{alias || mac?.slice(-8) || "Unknown"}</div>
                                                         <div className="device-config-mac">{mac}</div>
                                                     </div>
                                                 </div>

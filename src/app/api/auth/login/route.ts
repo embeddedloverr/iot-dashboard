@@ -48,12 +48,10 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        const isHttps = request.headers.get("x-forwarded-proto") === "https" || request.url.startsWith("https");
-
         response.cookies.set(COOKIE_NAME, token, {
             httpOnly: true,
-            secure: isHttps,
-            sameSite: "lax",
+            secure: true,
+            sameSite: "none",
             maxAge: 7 * 24 * 60 * 60, // 7 days
             path: "/",
         });

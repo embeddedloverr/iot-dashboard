@@ -161,7 +161,7 @@ export default function AdminPage() {
         } catch { showMsg("Network error", "error"); }
     };
 
-    const getDeviceName = (mac: string) => aliases[mac] || mac.slice(-8);
+    const getDeviceName = (mac: string) => aliases[mac] || mac?.slice(-8) || "Unknown";
 
     if (!user || (user.role !== "superadmin" && user.role !== "admin")) return null;
 

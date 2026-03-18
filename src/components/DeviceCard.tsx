@@ -43,7 +43,7 @@ export default function DeviceCard({
     const offline = isOffline(mongoTs);
     const tempColor = temp_c >= 45 ? "#ef4444" : temp_c >= 38 ? "#f59e0b" : "#10b981";
     const humColor = hum_rh >= 85 || hum_rh <= 20 ? "#ef4444" : hum_rh >= 70 || hum_rh <= 30 ? "#f59e0b" : "#3b82f6";
-    const shortMac = mac.slice(-8);
+    const shortMac = mac?.slice(-8) || "Unknown";
     const name = alias || shortMac;
 
     return (
