@@ -101,7 +101,7 @@ export default function Dashboard() {
 
   useEffect(() => { fetchHistory(); fetchStats(); }, [fetchHistory, fetchStats]);
   useEffect(() => { const i = setInterval(fetchLatest, 30000); return () => clearInterval(i); }, [fetchLatest]);
-  useEffect(() => { const i = setInterval(() => { fetch("/api/alerts/check").catch(console.error); }, 120000); return () => clearInterval(i); }, []);
+  useEffect(() => { const i = setInterval(() => { fetch("/api/alerts/check").catch(console.error); }, 30000); return () => clearInterval(i); }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);

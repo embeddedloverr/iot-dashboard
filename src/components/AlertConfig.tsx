@@ -73,7 +73,11 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
         } catch (err) { console.error("Failed to fetch configs:", err); }
     }, []);
 
-    useEffect(() => { fetchAlertConfigs(); fetchHistory(); }, [fetchAlertConfigs, fetchHistory]);
+    useEffect(() => {
+        fetchAlertConfigs(); fetchHistory();
+        // Trigger immediate alert check on page load
+        fetch("/api/alerts/check").catch(console.error);
+    }, [fetchAlertConfigs, fetchHistory]);
 
     const showMsg = (text: string, type: "success" | "error", ms = 4000) => {
         setMessage({ text, type }); setTimeout(() => setMessage(null), ms);
@@ -89,6 +93,8 @@ export default function AlertConfigPanel({ devices, aliases, onAliasUpdate }: Al
             const data = await res.json();
             if (data.success) {
                 setDeviceConfigs(prev => ({ ...prev, [mac]: { ...cfg, emails: validEmails } }));
+                // Trigger immediate alert check after config save
+                fetch("/api/alerts/check").catch(console.error);
             }
             return data.success;
         } catch { return false; }
