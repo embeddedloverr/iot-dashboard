@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 
 export async function DELETE(
     request: NextRequest,
-    context: { params: { mac: string } }
+    context: { params: Promise<{ mac: string }> }
 ) {
     try {
         const session = getSession(request);
@@ -12,11 +12,11 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
         }
 
-        if (!context?.params?.mac) {
+        const { mac } = await context.params;
+
+        if (!mac) {
              return NextResponse.json({ success: false, error: "mac parameter missing" }, { status: 400 });
         }
-        
-        const mac = context.params.mac;
 
         const db = await getDb();
         
