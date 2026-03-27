@@ -68,13 +68,22 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
                     )}
 
                     {isAdmin && (
-                        <button
-                            onClick={() => router.push("/admin")}
-                            className="sidebar-nav-item"
-                        >
-                            <span className="nav-icon">👑</span>
-                            <span>Admin</span>
-                        </button>
+                        <>
+                            <button
+                                onClick={() => router.push("/admin")}
+                                className={`sidebar-nav-item ${activeSection === "admin" ? "active" : ""}`}
+                            >
+                                <span className="nav-icon">👑</span>
+                                <span>Users</span>
+                            </button>
+                            <button
+                                onClick={() => router.push("/admin/devices")}
+                                className={`sidebar-nav-item ${activeSection === "admin-devices" ? "active" : ""}`}
+                            >
+                                <span className="nav-icon">📱</span>
+                                <span>Devices</span>
+                            </button>
+                        </>
                     )}
                 </nav>
 

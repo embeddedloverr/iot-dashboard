@@ -122,16 +122,16 @@ export async function GET() {
         let triggered = false;
         const emailResults: Array<{ mac: string; status: string; error?: string }> = [];
 
-        // Send temperature alerts (per-device cooldown: 5 minutes)
+        // Send temperature alerts (per-device cooldown: 60 minutes)
         if (tempAlerts.length > 0) {
-            const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+            const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000);
 
             for (const alert of tempAlerts) {
                 // Check per-device cooldown
                 const recentAlert = await db.collection("alert_history").findOne({
                     type: "temperature",
                     mac: alert.mac,
-                    triggeredAt: { $gt: fiveMinAgo },
+                    triggeredAt: { $gt: sixtyMinAgo },
                 });
                 if (recentAlert) {
                     debug.push(`  → ${alert.mac}: COOLDOWN active (last alert: ${recentAlert.triggeredAt})`);
