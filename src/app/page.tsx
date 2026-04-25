@@ -8,6 +8,7 @@ import HistoricalChart from "@/components/HistoricalChart";
 import StatsGrid from "@/components/StatsGrid";
 import DeviceSelector from "@/components/DeviceSelector";
 import AlertConfigPanel from "@/components/AlertConfig";
+import RelayRulesPanel from "@/components/RelayRulesPanel";
 import { useAuth } from "@/components/AuthProvider";
 
 interface SensorReading {
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [aliases, setAliases] = useState<Record<string, string>>({});
 
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
+  const isSuperAdmin = user?.role === "superadmin";
   const userDevices = user?.devices || [];
   const hasDeviceFilter = !isAdmin && userDevices.length > 0;
 
@@ -102,6 +104,7 @@ export default function Dashboard() {
   useEffect(() => { fetchHistory(); fetchStats(); }, [fetchHistory, fetchStats]);
   useEffect(() => { const i = setInterval(fetchLatest, 30000); return () => clearInterval(i); }, [fetchLatest]);
   useEffect(() => { const i = setInterval(() => { fetch("/api/alerts/check").catch(console.error); }, 30000); return () => clearInterval(i); }, []);
+  useEffect(() => { const i = setInterval(() => { fetch("/api/relay/execute").catch(console.error); }, 30000); return () => clearInterval(i); }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -200,6 +203,13 @@ export default function Dashboard() {
             devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || "" }))}
             aliases={aliases}
             onAliasUpdate={fetchAliases}
+          />
+        )}
+
+        {activeSection === "relay" && isSuperAdmin && (
+          <RelayRulesPanel
+            devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || d.mac }))}
+            aliases={aliases}
           />
         )}
 

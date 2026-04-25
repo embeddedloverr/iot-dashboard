@@ -85,6 +85,19 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
                             </button>
                         </>
                     )}
+
+                    {user && user.role === "superadmin" && (
+                        <button
+                            onClick={() => {
+                                onSectionChange("relay");
+                                setMobileOpen(false);
+                            }}
+                            className={`sidebar-nav-item ${activeSection === "relay" ? "active" : ""}`}
+                        >
+                            <span className="nav-icon">⚡</span>
+                            <span>Relay Control</span>
+                        </button>
+                    )}
                 </nav>
 
                 {/* User info + logout at bottom */}
