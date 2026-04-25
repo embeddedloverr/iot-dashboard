@@ -160,7 +160,7 @@ export async function GET() {
                 results.push({
                     rule: ruleName,
                     status: "unchanged",
-                    action: matchedAction,
+                    action: matchedAction ?? undefined,
                     channel: matchedChannel,
                 });
                 continue;
@@ -185,7 +185,7 @@ export async function GET() {
                 results.push({
                     rule: ruleName,
                     status: "executed",
-                    action: matchedAction,
+                    action: matchedAction ?? undefined,
                     channel: matchedChannel,
                     matchedCondition: matchedCondDesc,
                 });
@@ -194,7 +194,7 @@ export async function GET() {
                 results.push({
                     rule: ruleName,
                     status: "error",
-                    action: matchedAction,
+                    action: matchedAction ?? undefined,
                     channel: matchedChannel,
                 });
             }
