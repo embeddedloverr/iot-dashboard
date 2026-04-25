@@ -15,8 +15,7 @@ interface RelayCondition {
 
 interface RelayRule {
     relayName: string;
-    relayMac?: string;
-    relayEndpoint: string;
+    relayMac: string;
     enabled: boolean;
     sensorMac: string;
     conditions: RelayCondition[];
@@ -67,7 +66,6 @@ export async function POST(request: NextRequest) {
             _id,
             relayName,
             relayMac,
-            relayEndpoint,
             enabled,
             sensorMac,
             conditions,
@@ -83,9 +81,9 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
-        if (!relayEndpoint || typeof relayEndpoint !== "string") {
+        if (!relayMac || typeof relayMac !== "string") {
             return NextResponse.json(
-                { success: false, error: "relayEndpoint URL is required" },
+                { success: false, error: "relayMac is required" },
                 { status: 400 }
             );
         }
@@ -135,8 +133,7 @@ export async function POST(request: NextRequest) {
 
         const doc = {
             relayName,
-            relayMac: relayMac || "",
-            relayEndpoint,
+            relayMac,
             enabled: enabled !== false,
             sensorMac,
             conditions: conditions.map((c: RelayCondition, i: number) => ({

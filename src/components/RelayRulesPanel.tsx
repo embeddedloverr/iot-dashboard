@@ -17,7 +17,6 @@ interface RelayRule {
     _id?: string;
     relayName: string;
     relayMac: string;
-    relayEndpoint: string;
     enabled: boolean;
     sensorMac: string;
     sensorAlias?: string;
@@ -55,7 +54,6 @@ const EMPTY_CONDITION = (): RelayCondition => ({
 const EMPTY_RULE = (): RelayRule => ({
     relayName: "",
     relayMac: "",
-    relayEndpoint: "",
     enabled: true,
     sensorMac: "",
     conditions: [EMPTY_CONDITION()],
@@ -151,8 +149,8 @@ export default function RelayRulesPanel({ devices, aliases }: RelayRulesPanelPro
             showMsg("Relay name is required", "error");
             return;
         }
-        if (!editForm.relayEndpoint.trim()) {
-            showMsg("Relay endpoint URL is required", "error");
+        if (!editForm.relayMac.trim()) {
+            showMsg("Relay MAC address is required", "error");
             return;
         }
         if (!editForm.sensorMac) {
@@ -354,7 +352,7 @@ export default function RelayRulesPanel({ devices, aliases }: RelayRulesPanelPro
                                                 <div className="relay-rule-meta">
                                                     📡 {rule.sensorAlias || getDeviceName(rule.sensorMac)}
                                                     {" → "}
-                                                    🔌 {rule.relayEndpoint}
+                                                    📶 smartdwell/{rule.relayMac}/relay/set
                                                 </div>
                                             </div>
                                         </div>
@@ -567,7 +565,7 @@ export default function RelayRulesPanel({ devices, aliases }: RelayRulesPanelPro
                                         />
                                     </div>
                                     <div className="admin-form-group">
-                                        <label>Relay MAC (optional)</label>
+                                        <label>🔌 Relay MAC Address</label>
                                         <input
                                             type="text"
                                             className="admin-input"
@@ -581,22 +579,21 @@ export default function RelayRulesPanel({ devices, aliases }: RelayRulesPanelPro
                                     </div>
                                 </div>
 
-                                <div className="admin-form-group">
-                                    <label>🔌 Relay HTTP Endpoint</label>
-                                    <input
-                                        type="text"
-                                        className="admin-input"
-                                        placeholder="http://192.168.1.50/relay"
-                                        value={editForm.relayEndpoint}
-                                        onChange={(e) =>
-                                            setEditForm({ ...editForm, relayEndpoint: e.target.value })
-                                        }
-                                        style={{ fontFamily: "monospace" }}
-                                    />
-                                    <p className="relay-form-hint">
-                                        Sends POST with {"{"}&quot;channel&quot;: N, &quot;action&quot;: &quot;ON/OFF&quot;{"}"}
-                                    </p>
-                                </div>
+                                {editForm.relayMac && (
+                                    <div style={{
+                                        padding: "8px 12px",
+                                        background: "rgba(245,158,11,0.06)",
+                                        border: "1px solid rgba(245,158,11,0.15)",
+                                        borderRadius: 8,
+                                        fontSize: 11,
+                                        fontFamily: "monospace",
+                                        color: "var(--text-secondary)",
+                                        marginBottom: 12,
+                                    }}>
+                                        📶 MQTT Topic: <span style={{ color: "#f59e0b" }}>smartdwell/{editForm.relayMac}/relay/set</span>
+                                        <br />📦 Payload: <span style={{ color: "var(--text-primary)" }}>{'{"relay": N, "state": 0|1}'}</span>
+                                    </div>
+                                )}
 
                                 <div className="admin-form-group">
                                     <label>📡 Source Sensor</label>

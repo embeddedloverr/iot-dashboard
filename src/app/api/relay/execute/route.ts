@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { isPhysicallyValid } from "@/lib/sensorFilter";
+import { mqttPublish, buildRelayTopic, buildRelayPayload } from "@/lib/mqttClient";
 
 // Evaluate a single condition against sensor values
 function evaluateCondition(
@@ -25,36 +26,6 @@ function evaluateCondition(
             return Math.abs(fieldValue - condition.value) < 0.1; // float tolerance
         default:
             return false;
-    }
-}
-
-// Send command to relay device via HTTP
-async function sendRelayCommand(
-    endpoint: string,
-    channel: number,
-    action: string
-): Promise<{ success: boolean; response?: string; error?: string }> {
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-        const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ channel, action }),
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeout);
-        const text = await res.text();
-
-        return {
-            success: res.ok,
-            response: text.slice(0, 500), // cap response length
-        };
-    } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        return { success: false, error: errMsg };
     }
 }
 
@@ -195,16 +166,22 @@ export async function GET() {
                 continue;
             }
 
-            // Send command to relay
-            debug.push(`[${ruleName}] Sending: channel=${matchedChannel} action=${matchedAction} → ${rule.relayEndpoint}`);
-            const cmdResult = await sendRelayCommand(
-                rule.relayEndpoint,
-                matchedChannel,
-                matchedAction
-            );
+            // Send command to relay via MQTT
+            const relayMac = rule.relayMac;
+            if (!relayMac) {
+                debug.push(`[${ruleName}] ✗ No relay MAC configured, skipping`);
+                results.push({ rule: ruleName, status: "no_relay_mac" });
+                continue;
+            }
+
+            const topic = buildRelayTopic(relayMac);
+            const payload = buildRelayPayload(matchedChannel, matchedAction as "ON" | "OFF");
+            debug.push(`[${ruleName}] MQTT publish: ${topic} → ${JSON.stringify(payload)}`);
+
+            const cmdResult = await mqttPublish(topic, payload);
 
             if (cmdResult.success) {
-                debug.push(`[${ruleName}] ✓ Relay command sent successfully`);
+                debug.push(`[${ruleName}] ✓ MQTT publish successful`);
                 results.push({
                     rule: ruleName,
                     status: "executed",
@@ -213,7 +190,7 @@ export async function GET() {
                     matchedCondition: matchedCondDesc,
                 });
             } else {
-                debug.push(`[${ruleName}] ✗ Relay command failed: ${cmdResult.error}`);
+                debug.push(`[${ruleName}] ✗ MQTT publish failed: ${cmdResult.error}`);
                 results.push({
                     rule: ruleName,
                     status: "error",
@@ -237,7 +214,9 @@ export async function GET() {
             await db.collection("relay_log").insertOne({
                 ruleId: rule._id.toString(),
                 ruleName,
-                relayEndpoint: rule.relayEndpoint,
+                relayMac,
+                mqttTopic: topic,
+                mqttPayload: payload,
                 sensorMac: rule.sensorMac,
                 sensorData: {
                     temp_c: sensorData.temp_c,
@@ -247,7 +226,7 @@ export async function GET() {
                 action: matchedAction,
                 channel: matchedChannel,
                 success: cmdResult.success,
-                relayResponse: cmdResult.response || cmdResult.error,
+                error: cmdResult.error || null,
                 executedAt: new Date(),
             });
 
