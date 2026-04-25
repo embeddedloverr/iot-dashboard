@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { filterReadings } from "@/lib/sensorFilter";
 
 function getTimeRangeMs(range: string): number {
     switch (range) {
@@ -82,6 +83,10 @@ export async function GET(request: NextRequest) {
             return docDate && docDate >= cutoffDate;
         });
 
+        // Apply IQR-based outlier filtering to remove spikes before charting
+        const rawCount = results.length;
+        results = filterReadings(results, "temp_c", "hum_rh");
+
         // Downsample if too many points
         if (results.length > maxPoints) {
             const step = Math.ceil(results.length / maxPoints);
@@ -91,7 +96,13 @@ export async function GET(request: NextRequest) {
         // Reverse so oldest first for charts
         results.reverse();
 
-        return NextResponse.json({ success: true, data: results, count: results.length });
+        return NextResponse.json({
+            success: true,
+            data: results,
+            count: results.length,
+            rawCount,
+            filteredOut: rawCount - results.length,
+        });
     } catch (error) {
         console.error("Error fetching history:", error);
         return NextResponse.json(

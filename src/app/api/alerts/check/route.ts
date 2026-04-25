@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { sendAlertEmail, buildAlertEmailHtml } from "@/lib/mailer";
+import { validateSingleReading, isPhysicallyValid } from "@/lib/sensorFilter";
 
 const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -71,6 +72,7 @@ export async function GET() {
         for (const reading of latestReadings) {
             const jsonDoc = reading.latestDoc.json;
             const temp = jsonDoc?.temp_c;
+            const hum = jsonDoc?.hum_rh;
             const mac = reading._id;
             const ts = jsonDoc?.ts || new Date(reading.mongoTs).toISOString();
             const alias = aliasMap[mac] || mac;
@@ -94,10 +96,47 @@ export async function GET() {
                 continue;
             }
 
+            // --- Spike/outlier detection ---
+            // Fetch recent readings for this device to validate against
+            const recentDocs = await db
+                .collection("mqtt_packets")
+                .aggregate([
+                    { $match: { topic: "smartdwell/sensor/temp", "json.mac": mac } },
+                    { $sort: { _id: -1 } },
+                    { $skip: 1 },
+                    { $limit: 20 },
+                    { $project: { _id: 0, temp_c: "$json.temp_c", hum_rh: "$json.hum_rh" } },
+                ])
+                .toArray();
+
+            const validRecent = recentDocs.filter((d) =>
+                isPhysicallyValid(d.temp_c as number, d.hum_rh as number)
+            );
+            const recentTemps = validRecent
+                .map((d) => d.temp_c as number)
+                .filter((v) => typeof v === "number" && !isNaN(v));
+            const recentHums = validRecent
+                .map((d) => d.hum_rh as number)
+                .filter((v) => typeof v === "number" && !isNaN(v));
+
+            const spikeCheck = validateSingleReading(temp, hum, recentTemps, recentHums);
+
+            if (!spikeCheck.valid) {
+                debug.push(`Device ${mac} (${alias}): temp=${temp}°C — SPIKE DETECTED, skipping alert: ${spikeCheck.reason}`);
+                // Still check offline, but skip temperature alert
+                if (isOffline && (deviceCfg.emails || []).length > 0) {
+                    const minutesAgo = Math.floor((now - lastSeenTime) / 60000);
+                    offlineAlerts.push({ mac, alias, lastSeen: new Date(reading.mongoTs), minutesAgo, emails: deviceCfg.emails });
+                    debug.push(`  → OFFLINE: ${minutesAgo} min ago`);
+                }
+                continue;
+            }
+            // --- End spike detection ---
+
             const setpoint = deviceCfg.tempSetpoint;
             const emails = deviceCfg.emails || [];
 
-            debug.push(`Device ${mac} (${alias}): temp=${temp}°C setpoint=${setpoint}°C emails=${emails.length} offline=${isOffline}`);
+            debug.push(`Device ${mac} (${alias}): temp=${temp}°C setpoint=${setpoint}°C emails=${emails.length} offline=${isOffline} (validated)`);
 
             // Check temperature alerts
             if (temp >= setpoint) {
