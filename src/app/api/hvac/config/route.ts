@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
+import { fetchNbsenseLatest, nbsenseLastSeenToIso, NBSENSE_VIRTUAL_MAC } from "@/lib/nbsense";
 
 // HVAC Zone with Pump + Heater relays + AC setpoint (no relay)
 interface HvacRelayConfig {
@@ -47,31 +48,19 @@ export async function GET() {
             aliasMap[a.mac] = a.alias;
         }
 
-        // Fetch latest sensor readings
-        const sensorMacs = [...new Set(configs.map((c) => c.sensorMac).filter(Boolean))];
-        const sensorMap: Record<string, { temp_c: number; hum_rh: number; ts: string; rssi?: number }> = {};
-
-        if (sensorMacs.length > 0) {
-            const latestReadings = await db
-                .collection("mqtt_packets")
-                .aggregate([
-                    { $match: { topic: "smartdwell/sensor/temp", "json.mac": { $in: sensorMacs } } },
-                    { $sort: { _id: -1 } },
-                    { $group: { _id: "$json.mac", latestDoc: { $first: "$$ROOT" } } },
-                ])
-                .toArray();
-
-            for (const reading of latestReadings) {
-                const json = reading.latestDoc?.json;
-                if (json?.mac) {
-                    sensorMap[json.mac] = {
-                        temp_c: json.temp_c,
-                        hum_rh: json.hum_rh,
-                        ts: json.ts || reading.latestDoc?.receivedAt?.toISOString() || "",
-                        rssi: json.rssi,
-                    };
-                }
-            }
+        // All HVAC zones now share a single nbsense reading
+        let nbsenseReading: { temp_c: number; hum_rh: number; ts: string; location: string } | null = null;
+        try {
+            const nb = await fetchNbsenseLatest();
+            nbsenseReading = {
+                temp_c: nb.temperature,
+                hum_rh: nb.humidity,
+                ts: nbsenseLastSeenToIso(nb.last_seen),
+                location: nb.location,
+            };
+            aliasMap[NBSENSE_VIRTUAL_MAC] = `nbsense · ${nb.location || nb.sensor_name}`;
+        } catch (err) {
+            console.error("[hvac/config] nbsense fetch failed:", err);
         }
 
         const defaultRelay = { relayMac: "", relayChannel: 1, mode: "manual" as const, manualState: "OFF" as const, lastAction: null, lastExecutedAt: null };
@@ -94,8 +83,8 @@ export async function GET() {
                 humDeadband: config.humDeadband ?? 5.0,
                 cooldownSeconds: config.cooldownSeconds ?? 60,
                 enabled: config.enabled !== false,
-                sensorAlias: aliasMap[config.sensorMac] || config.sensorMac,
-                sensorData: sensorMap[config.sensorMac] || null,
+                sensorAlias: aliasMap[config.sensorMac] || aliasMap[NBSENSE_VIRTUAL_MAC] || config.sensorMac,
+                sensorData: nbsenseReading,
             };
         });
 
@@ -115,9 +104,7 @@ export async function POST(request: NextRequest) {
         if (!zoneName || typeof zoneName !== "string") {
             return NextResponse.json({ success: false, error: "zoneName is required" }, { status: 400 });
         }
-        if (!sensorMac || typeof sensorMac !== "string") {
-            return NextResponse.json({ success: false, error: "sensorMac is required" }, { status: 400 });
-        }
+        const effectiveSensorMac = (sensorMac && typeof sensorMac === "string" && sensorMac.trim()) || NBSENSE_VIRTUAL_MAC;
 
         const buildRelay = (r: HvacRelayConfig | undefined) => ({
             relayMac: (r?.relayMac || "").trim().toUpperCase(),
@@ -133,7 +120,7 @@ export async function POST(request: NextRequest) {
 
         const doc = {
             zoneName: zoneName.trim(),
-            sensorMac: sensorMac.trim(),
+            sensorMac: effectiveSensorMac,
             pump: buildRelay(pump),
             heater: buildRelay(heater),
             tempSetpoint: tempSetpoint ?? 24,

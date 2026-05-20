@@ -208,10 +208,7 @@ export default function Dashboard() {
         )}
 
         {activeSection === "hvac" && isSuperAdmin && (
-          <HvacPanel
-            devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || d.mac }))}
-            aliases={aliases}
-          />
+          <HvacPanel />
         )}
 
         {activeSection === "relay" && isSuperAdmin && (

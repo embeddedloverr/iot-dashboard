@@ -31,12 +31,11 @@ interface HvacZone {
     updatedAt?: string;
 }
 
-interface DeviceInfo { mac: string; alias: string; }
-interface HvacPanelProps { devices: DeviceInfo[]; aliases: Record<string, string>; }
 
 const EMPTY_RELAY = (): HvacRelayState => ({ relayMac: "", relayChannel: 1, mode: "manual", manualState: "OFF", lastAction: null, lastExecutedAt: null });
+const NBSENSE_VIRTUAL_MAC = "NBSENSE";
 const EMPTY_ZONE = (): HvacZone => ({
-    zoneName: "", sensorMac: "",
+    zoneName: "", sensorMac: NBSENSE_VIRTUAL_MAC,
     pump: EMPTY_RELAY(), heater: EMPTY_RELAY(),
     tempSetpoint: 24, tempDeadband: 1.0,
     acTempSetpoint: 26, acTempDeadband: 1.0,
@@ -44,7 +43,7 @@ const EMPTY_ZONE = (): HvacZone => ({
     cooldownSeconds: 60, enabled: true,
 });
 
-export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
+export default function HvacPanel() {
     const [zones, setZones] = useState<HvacZone[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -79,7 +78,6 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
 
     const handleSave = async () => {
         if (!editForm.zoneName.trim()) { showMsg("Zone name is required", "error"); return; }
-        if (!editForm.sensorMac) { showMsg("Select a sensor", "error"); return; }
         setSaving(true);
         try {
             const res = await fetch("/api/hvac/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editForm) });
@@ -382,10 +380,13 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                                     </div>
                                     <div className="admin-form-group">
                                         <label>📡 Source Sensor</label>
-                                        <select className="admin-input relay-select" value={editForm.sensorMac} onChange={(e) => setEditForm({ ...editForm, sensorMac: e.target.value })}>
-                                            <option value="">— Select a sensor —</option>
-                                            {devices.map((d) => (<option key={d.mac} value={d.mac}>{d.alias || d.mac} ({d.mac})</option>))}
-                                        </select>
+                                        <div className="admin-input" style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.25)", cursor: "default" }}>
+                                            <span>🌐</span>
+                                            <div style={{ flex: 1, fontSize: 13 }}>
+                                                <strong>nbsense API</strong>
+                                                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Live temp & humidity from nbsense (refreshes every 60s)</div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
