@@ -3,8 +3,8 @@ import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 import { mqttPublish, buildRelayTopic, buildRelayPayload } from "@/lib/mqttClient";
 
-// POST: Manually control an HVAC relay (pump, heater, or ac)
-// Body: { configId: string, relay: "pump" | "heater" | "ac", action: "ON" | "OFF" }
+// POST: Manually control an HVAC relay (pump or heater)
+// Body: { configId: string, relay: "pump" | "heater", action: "ON" | "OFF" }
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
         if (!configId || typeof configId !== "string") {
             return NextResponse.json({ success: false, error: "configId is required" }, { status: 400 });
         }
-        if (!["pump", "heater", "ac"].includes(relay)) {
-            return NextResponse.json({ success: false, error: "relay must be 'pump', 'heater', or 'ac'" }, { status: 400 });
+        if (!["pump", "heater"].includes(relay)) {
+            return NextResponse.json({ success: false, error: "relay must be 'pump' or 'heater'" }, { status: 400 });
         }
         if (!["ON", "OFF"].includes(action)) {
             return NextResponse.json({ success: false, error: "action must be 'ON' or 'OFF'" }, { status: 400 });
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: "HVAC zone not found" }, { status: 404 });
         }
 
-        const relayConfig = config[relay as "pump" | "heater" | "ac"];
+        const relayConfig = config[relay as "pump" | "heater"];
         if (!relayConfig?.relayMac) {
             return NextResponse.json({ success: false, error: `No ${relay} relay MAC configured` }, { status: 400 });
         }
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         const result = await mqttPublish(topic, payload);
 
         const now = new Date();
-        const relayLabel = relay === "pump" ? "Pump" : relay === "heater" ? "Heater" : "AC";
+        const relayLabel = relay === "pump" ? "Pump" : "Heater";
 
         if (result.success) {
             // Update the specific relay state

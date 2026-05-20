@@ -348,53 +348,6 @@ export async function GET() {
                     }
                 }
             }
-
-            // --- Evaluate AC (temperature-driven, cooling — ON when hot) ---
-            const ac = config.ac;
-            if (ac && ac.mode === "auto" && ac.relayMac) {
-                const acSetpoint = config.acTempSetpoint ?? 26;
-                const acDeadband = config.acTempDeadband ?? 1;
-                debug.push(`[HVAC: ${zoneName}/AC] Setpoint: ${acSetpoint}±${acDeadband}°C`);
-
-                let acCooldownOk = true;
-                if (ac.lastExecutedAt) {
-                    const elapsed = (now - new Date(ac.lastExecutedAt).getTime()) / 1000;
-                    const cd = config.cooldownSeconds || 60;
-                    if (elapsed < cd) {
-                        debug.push(`[HVAC: ${zoneName}/AC] Cooldown: ${Math.ceil(cd - elapsed)}s remaining`);
-                        acCooldownOk = false;
-                    }
-                }
-
-                if (acCooldownOk) {
-                    let acAction: "ON" | "OFF" | null = null;
-                    const acUpper = acSetpoint + acDeadband;
-                    const acLower = acSetpoint - acDeadband;
-
-                    if (sData.temp_c > acUpper) {
-                        acAction = "ON"; // Too hot, cooling needed
-                        debug.push(`[HVAC: ${zoneName}/AC] Temp ${sData.temp_c}°C > ${acUpper}°C → ON`);
-                    } else if (sData.temp_c < acLower) {
-                        acAction = "OFF"; // Cool enough, stop AC
-                        debug.push(`[HVAC: ${zoneName}/AC] Temp ${sData.temp_c}°C < ${acLower}°C → OFF`);
-                    } else {
-                        debug.push(`[HVAC: ${zoneName}/AC] Within dead-band, no action`);
-                    }
-
-                    if (acAction && ac.lastAction !== acAction) {
-                        const aTopic = buildRelayTopic(ac.relayMac);
-                        const aPayload = buildRelayPayload(ac.relayChannel || 1, acAction);
-                        const aResult = await mqttPublish(aTopic, aPayload);
-                        debug.push(`[HVAC: ${zoneName}/AC] MQTT: ${aTopic} → ${JSON.stringify(aPayload)} — ${aResult.success ? "✓" : "✗ " + aResult.error}`);
-
-                        if (aResult.success) executedCount++;
-                        await db.collection("hvac_configs").updateOne({ _id: config._id }, { $set: { "ac.lastAction": acAction, "ac.lastExecutedAt": new Date(), updatedAt: new Date() } });
-                        await db.collection("relay_log").insertOne({ ruleId: config._id.toString(), ruleName: `HVAC AC: ${zoneName}`, relayMac: ac.relayMac, mqttTopic: aTopic, mqttPayload: aPayload, sensorMac: config.sensorMac, sensorData: { temp_c: sData.temp_c, hum_rh: sData.hum_rh }, matchedCondition: `AC auto → ${acAction}`, action: acAction, channel: ac.relayChannel || 1, success: aResult.success, error: aResult.error || null, executedAt: new Date(), source: "hvac_auto_ac" });
-                    } else if (acAction) {
-                        debug.push(`[HVAC: ${zoneName}/AC] Action unchanged (${acAction}), skipping`);
-                    }
-                }
-            }
         }
 
         return NextResponse.json({

@@ -17,7 +17,6 @@ interface HvacZone {
     sensorMac: string;
     pump: HvacRelayState;
     heater: HvacRelayState;
-    ac: HvacRelayState;
     tempSetpoint: number;
     tempDeadband: number;
     acTempSetpoint: number;
@@ -38,7 +37,7 @@ interface HvacPanelProps { devices: DeviceInfo[]; aliases: Record<string, string
 const EMPTY_RELAY = (): HvacRelayState => ({ relayMac: "", relayChannel: 1, mode: "manual", manualState: "OFF", lastAction: null, lastExecutedAt: null });
 const EMPTY_ZONE = (): HvacZone => ({
     zoneName: "", sensorMac: "",
-    pump: EMPTY_RELAY(), heater: EMPTY_RELAY(), ac: EMPTY_RELAY(),
+    pump: EMPTY_RELAY(), heater: EMPTY_RELAY(),
     tempSetpoint: 24, tempDeadband: 1.0,
     acTempSetpoint: 26, acTempDeadband: 1.0,
     humSetpoint: 55, humDeadband: 5.0,
@@ -72,7 +71,6 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
             ...zone,
             pump: { ...(zone.pump || EMPTY_RELAY()) },
             heater: { ...(zone.heater || EMPTY_RELAY()) },
-            ac: { ...(zone.ac || EMPTY_RELAY()) },
             acTempSetpoint: zone.acTempSetpoint ?? 26,
             acTempDeadband: zone.acTempDeadband ?? 1.0,
         });
@@ -96,14 +94,14 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         catch { showMsg("Network error", "error"); }
     };
 
-    const handleControl = async (zone: HvacZone, relay: "pump" | "heater" | "ac", action: "ON" | "OFF") => {
+    const handleControl = async (zone: HvacZone, relay: "pump" | "heater", action: "ON" | "OFF") => {
         if (!zone._id) return;
         const key = `${zone._id}_${relay}`;
         setControlling(key);
         try {
             const res = await fetch("/api/hvac/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ configId: zone._id, relay, action }) });
             const data = await res.json();
-            const label = relay === "pump" ? "Pump" : relay === "heater" ? "Heater" : "AC";
+            const label = relay === "pump" ? "Pump" : "Heater";
             if (data.success) { showMsg(`⚡ ${zone.zoneName}: ${label} ${action}`, "success"); fetchZones(); }
             else { showMsg(data.error || "Control failed", "error"); }
         } catch { showMsg("Network error", "error"); } finally { setControlling(null); }
@@ -114,11 +112,11 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         catch { showMsg("Failed to toggle", "error"); }
     };
 
-    const handleModeSwitch = async (zone: HvacZone, relay: "pump" | "heater" | "ac") => {
+    const handleModeSwitch = async (zone: HvacZone, relay: "pump" | "heater") => {
         const relayData = zone[relay] || EMPTY_RELAY();
         const newMode = relayData.mode === "manual" ? "auto" : "manual";
         const updated = { ...zone, [relay]: { ...relayData, mode: newMode } };
-        const label = relay === "pump" ? "Pump" : relay === "heater" ? "Heater" : "AC";
+        const label = relay === "pump" ? "Pump" : "Heater";
         try { await fetch("/api/hvac/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) }); showMsg(`${zone.zoneName}: ${label} → ${newMode}`, "success"); fetchZones(); }
         catch { showMsg("Failed to switch mode", "error"); }
     };
@@ -127,7 +125,7 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
 
     // --- Relay row sub-component ---
     const RelayRow = ({ zone, relay, label, icon, setpoint, deadband, unit, currentVal, statusColor }: {
-        zone: HvacZone; relay: "pump" | "heater" | "ac"; label: string; icon: string;
+        zone: HvacZone; relay: "pump" | "heater"; label: string; icon: string;
         setpoint: number; deadband: number; unit: string;
         currentVal: number | null; statusColor: string;
     }) => {
@@ -207,7 +205,7 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
 
     // --- Modal relay config section ---
     const RelayFormSection = ({ relay, label, icon, borderColor, setpointLabel, setpointIcon, setpointValue, deadbandValue, setpointMin, setpointMax, setpointStep, deadbandMin, deadbandMax, deadbandStep, onSetpointChange, onDeadbandChange }: {
-        relay: "pump" | "heater" | "ac"; label: string; icon: string; borderColor: string;
+        relay: "pump" | "heater"; label: string; icon: string; borderColor: string;
         setpointLabel: string; setpointIcon: string;
         setpointValue: number; deadbandValue: number;
         setpointMin: number; setpointMax: number; setpointStep: number;
@@ -311,13 +309,26 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                                     statusColor={hasData ? (zone.sensorData!.temp_c >= 38 ? "#ef4444" : zone.sensorData!.temp_c >= 30 ? "#f59e0b" : "#10b981") : "#666"}
                                 />
 
-                                {/* AC Relay Row */}
-                                <RelayRow
-                                    zone={zone} relay="ac" label="AC" icon="❄️"
-                                    setpoint={zone.acTempSetpoint ?? 26} deadband={zone.acTempDeadband ?? 1} unit="°C"
-                                    currentVal={hasData ? zone.sensorData!.temp_c : null}
-                                    statusColor={hasData ? (zone.sensorData!.temp_c >= 35 ? "#ef4444" : zone.sensorData!.temp_c >= 28 ? "#f59e0b" : "#3b82f6") : "#666"}
-                                />
+                                {/* AC Setpoint Display (no relay) */}
+                                <div className="hvac-relay-row">
+                                    <div className="hvac-relay-row-header">
+                                        <div className="hvac-relay-row-title">
+                                            <span style={{ fontSize: 16 }}>❄️</span>
+                                            <div><strong>AC</strong><span className="hvac-relay-mac">Setpoint only · No relay</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="hvac-relay-row-body">
+                                        <div className="hvac-relay-row-reading">
+                                            <div className="hvac-reading-values">
+                                                <span className="hvac-current-val" style={{ color: hasData ? (zone.sensorData!.temp_c >= 35 ? "#ef4444" : zone.sensorData!.temp_c >= 28 ? "#f59e0b" : "#3b82f6") : "#666", fontSize: 22 }}>
+                                                    {hasData ? zone.sensorData!.temp_c.toFixed(1) : "--"}<span className="hvac-unit">°C</span>
+                                                </span>
+                                                <span className="hvac-setpoint-val">🎯 {zone.acTempSetpoint ?? 26}°C<span className="hvac-deadband">±{zone.acTempDeadband ?? 1}</span></span>
+                                            </div>
+                                            {hasData && (() => { const d = zone.sensorData!.temp_c - (zone.acTempSetpoint ?? 26); const db = zone.acTempDeadband ?? 1; return <div style={{ fontSize: 10, fontWeight: 600, color: Math.abs(d) <= db ? "#10b981" : d > 0 ? "#ef4444" : "#3b82f6", marginTop: 2 }}>{Math.abs(d) <= db ? "On target" : d > 0 ? `+${d.toFixed(1)}°C above` : `${Math.abs(d).toFixed(1)}°C below`}</div>; })()}
+                                        </div>
+                                    </div>
+                                </div>
 
                                 {/* Pump Relay Row */}
                                 <RelayRow
@@ -391,17 +402,20 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                                 onDeadbandChange={(v) => setEditForm({ ...editForm, tempDeadband: v })}
                             />
 
-                            {/* AC Config */}
-                            <RelayFormSection
-                                relay="ac" label="AC Relay — Cooling Control" icon="❄️"
-                                borderColor="rgba(56, 189, 248, 0.25)"
-                                setpointLabel="AC Setpoint (°C)" setpointIcon="❄️"
-                                setpointValue={editForm.acTempSetpoint} deadbandValue={editForm.acTempDeadband}
-                                setpointMin={16} setpointMax={32} setpointStep={0.5}
-                                deadbandMin={0.5} deadbandMax={5} deadbandStep={0.5}
-                                onSetpointChange={(v) => setEditForm({ ...editForm, acTempSetpoint: v })}
-                                onDeadbandChange={(v) => setEditForm({ ...editForm, acTempDeadband: v })}
-                            />
+                            {/* AC Setpoint Only (no relay) */}
+                            <div className="relay-form-section" style={{ borderColor: "rgba(56, 189, 248, 0.25)" }}>
+                                <div className="relay-form-section-title">❄️ AC — Setpoint Configuration (No Relay)</div>
+                                <div className="relay-form-grid">
+                                    <div className="admin-form-group">
+                                        <label>❄️ AC Setpoint (°C)</label>
+                                        <input type="number" className="admin-input" step={0.5} min={16} max={32} value={editForm.acTempSetpoint} onChange={(e) => setEditForm({ ...editForm, acTempSetpoint: Number(e.target.value) })} />
+                                    </div>
+                                    <div className="admin-form-group">
+                                        <label>± Dead-band</label>
+                                        <input type="number" className="admin-input" step={0.5} min={0.5} max={5} value={editForm.acTempDeadband} onChange={(e) => setEditForm({ ...editForm, acTempDeadband: Number(e.target.value) })} />
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Pump Config */}
                             <RelayFormSection

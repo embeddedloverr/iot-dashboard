@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// HVAC Zone with triple relay: Pump + Heater + AC
+// HVAC Zone with Pump + Heater relays + AC setpoint (no relay)
 interface HvacRelayConfig {
     relayMac: string;
     relayChannel: number;
@@ -17,13 +17,12 @@ interface HvacConfig {
     sensorMac: string;
     pump: HvacRelayConfig;      // Pump — humidity-driven
     heater: HvacRelayConfig;    // Heater — temp-driven (ON when cold)
-    ac: HvacRelayConfig;        // AC — temp-driven (ON when hot)
+    // AC setpoints (display only, no relay)
+    acTempSetpoint: number;
+    acTempDeadband: number;
     // Heater setpoints
     tempSetpoint: number;
     tempDeadband: number;
-    // AC setpoints (separate from heater)
-    acTempSetpoint: number;
-    acTempDeadband: number;
     // Humidity setpoints (pump)
     humSetpoint: number;
     humDeadband: number;
@@ -81,14 +80,12 @@ export async function GET() {
             // Backward compatibility: normalize old schemas
             const pump = config.pump || { ...defaultRelay, relayMac: config.relayMac || "", relayChannel: config.relayChannel || 1, mode: config.mode || "manual", manualState: config.manualState || "OFF", lastAction: config.lastAction || null, lastExecutedAt: config.lastExecutedAt || null };
             const heater = config.heater || { ...defaultRelay };
-            const ac = config.ac || { ...defaultRelay };
 
             return {
                 ...config,
                 _id: config._id.toString(),
                 pump,
                 heater,
-                ac,
                 tempSetpoint: config.tempSetpoint ?? 24,
                 tempDeadband: config.tempDeadband ?? 1.0,
                 acTempSetpoint: config.acTempSetpoint ?? 26,
@@ -113,7 +110,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { _id, zoneName, sensorMac, pump, heater, ac, tempSetpoint, tempDeadband, acTempSetpoint, acTempDeadband, humSetpoint, humDeadband, cooldownSeconds, enabled } = body as HvacConfig & { _id?: string };
+        const { _id, zoneName, sensorMac, pump, heater, tempSetpoint, tempDeadband, acTempSetpoint, acTempDeadband, humSetpoint, humDeadband, cooldownSeconds, enabled } = body as HvacConfig & { _id?: string };
 
         if (!zoneName || typeof zoneName !== "string") {
             return NextResponse.json({ success: false, error: "zoneName is required" }, { status: 400 });
@@ -139,7 +136,6 @@ export async function POST(request: NextRequest) {
             sensorMac: sensorMac.trim(),
             pump: buildRelay(pump),
             heater: buildRelay(heater),
-            ac: buildRelay(ac),
             tempSetpoint: tempSetpoint ?? 24,
             tempDeadband: tempDeadband ?? 1.0,
             acTempSetpoint: acTempSetpoint ?? 26,
