@@ -72,12 +72,28 @@ export async function GET() {
             }
         }
 
-        const enriched = configs.map((config) => ({
-            ...config,
-            _id: config._id.toString(),
-            sensorAlias: aliasMap[config.sensorMac] || config.sensorMac,
-            sensorData: sensorMap[config.sensorMac] || null,
-        }));
+        const defaultRelay = { relayMac: "", relayChannel: 1, mode: "manual" as const, manualState: "OFF" as const, lastAction: null, lastExecutedAt: null };
+
+        const enriched = configs.map((config) => {
+            // Backward compatibility: normalize old single-relay schema to dual-relay
+            const pump = config.pump || { ...defaultRelay, relayMac: config.relayMac || "", relayChannel: config.relayChannel || 1, mode: config.mode || "manual", manualState: config.manualState || "OFF", lastAction: config.lastAction || null, lastExecutedAt: config.lastExecutedAt || null };
+            const heater = config.heater || { ...defaultRelay };
+
+            return {
+                ...config,
+                _id: config._id.toString(),
+                pump,
+                heater,
+                tempSetpoint: config.tempSetpoint ?? 24,
+                tempDeadband: config.tempDeadband ?? 1.0,
+                humSetpoint: config.humSetpoint ?? 55,
+                humDeadband: config.humDeadband ?? 5.0,
+                cooldownSeconds: config.cooldownSeconds ?? 60,
+                enabled: config.enabled !== false,
+                sensorAlias: aliasMap[config.sensorMac] || config.sensorMac,
+                sensorData: sensorMap[config.sensorMac] || null,
+            };
+        });
 
         return NextResponse.json({ success: true, data: enriched });
     } catch (error) {

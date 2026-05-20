@@ -63,12 +63,12 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
     useEffect(() => { const i = setInterval(fetchZones, 15000); return () => clearInterval(i); }, [fetchZones]);
 
     const openCreate = () => { setEditForm(EMPTY_ZONE()); setShowModal(true); };
-    const openEdit = (zone: HvacZone) => { setEditForm({ ...zone, pump: { ...zone.pump }, heater: { ...zone.heater } }); setShowModal(true); };
+    const openEdit = (zone: HvacZone) => { setEditForm({ ...zone, pump: { ...(zone.pump || EMPTY_RELAY()) }, heater: { ...(zone.heater || EMPTY_RELAY()) } }); setShowModal(true); };
 
     const handleSave = async () => {
         if (!editForm.zoneName.trim()) { showMsg("Zone name is required", "error"); return; }
-        if (!editForm.pump.relayMac.trim()) { showMsg("Pump relay MAC is required", "error"); return; }
-        if (!editForm.heater.relayMac.trim()) { showMsg("Heater relay MAC is required", "error"); return; }
+        if (!editForm.pump?.relayMac?.trim()) { showMsg("Pump relay MAC is required", "error"); return; }
+        if (!editForm.heater?.relayMac?.trim()) { showMsg("Heater relay MAC is required", "error"); return; }
         if (!editForm.sensorMac) { showMsg("Select a sensor", "error"); return; }
         setSaving(true);
         try {
@@ -102,8 +102,9 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
     };
 
     const handleModeSwitch = async (zone: HvacZone, relay: "pump" | "heater") => {
-        const newMode = zone[relay].mode === "manual" ? "auto" : "manual";
-        const updated = { ...zone, [relay]: { ...zone[relay], mode: newMode } };
+        const relayData = zone[relay] || EMPTY_RELAY();
+        const newMode = relayData.mode === "manual" ? "auto" : "manual";
+        const updated = { ...zone, [relay]: { ...relayData, mode: newMode } };
         try { await fetch("/api/hvac/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) }); showMsg(`${zone.zoneName}: ${relay === "pump" ? "Pump" : "Heater"} → ${newMode}`, "success"); fetchZones(); }
         catch { showMsg("Failed to switch mode", "error"); }
     };
@@ -116,7 +117,7 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         field: string; setpoint: number; deadband: number; unit: string;
         currentVal: number | null; statusColor: string;
     }) => {
-        const r = zone[relay];
+        const r = zone[relay] || { relayMac: "", relayChannel: 1, mode: "manual" as const, manualState: "OFF" as const, lastAction: null, lastExecutedAt: null };
         const isOn = r.lastAction === "ON";
         const ctrlKey = `${zone._id}_${relay}`;
         const diff = currentVal !== null ? currentVal - setpoint : null;
