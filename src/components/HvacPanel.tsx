@@ -55,7 +55,6 @@ interface SensorCard {
 }
 
 export default function HvacPanel({ devices }: HvacPanelProps) {
-    const [activeTab, setActiveTab] = useState<"zones" | "cards">("zones");
     const [zones, setZones] = useState<HvacZone[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -303,39 +302,19 @@ export default function HvacPanel({ devices }: HvacPanelProps) {
                     </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    {activeTab === "zones" ? (
-                        <>
-                            <span className="hvac-zone-count">{zones.length} zone{zones.length !== 1 ? "s" : ""}</span>
-                            <button className="hvac-btn-primary" onClick={openCreate}>+ Add Zone</button>
-                        </>
-                    ) : (
-                        <span className="hvac-zone-count">{cards.length} card{cards.length !== 1 ? "s" : ""}</span>
-                    )}
+                    <span className="hvac-zone-count">{zones.length} zone{zones.length !== 1 ? "s" : ""}</span>
+                    <button className="hvac-btn-primary" onClick={openCreate}>+ Add Zone</button>
                 </div>
-            </div>
-
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid rgba(100,100,255,0.15)" }}>
-                {(["zones", "cards"] as const).map((t) => (
-                    <button
-                        key={t}
-                        onClick={() => setActiveTab(t)}
-                        style={{
-                            padding: "10px 18px", background: "transparent", border: "none", cursor: "pointer",
-                            color: activeTab === t ? "var(--accent, #6366f1)" : "var(--text-secondary)",
-                            fontWeight: activeTab === t ? 700 : 500, fontSize: 13,
-                            borderBottom: activeTab === t ? "2px solid var(--accent, #6366f1)" : "2px solid transparent",
-                            marginBottom: -1,
-                        }}
-                    >
-                        {t === "zones" ? "🏠 Zones" : "📡 Sensor Cards"}
-                    </button>
-                ))}
             </div>
 
             {message && <div className={`alert-message ${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
 
-            {activeTab === "cards" ? (
+            {/* Sensor Cards section — inline above zones */}
+            <div style={{ marginBottom: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>📡 Monitored Sensors</h3>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{cards.length} card{cards.length !== 1 ? "s" : ""}</span>
+                </div>
                 <SensorCardsTab
                     cards={cards}
                     devices={devices}
@@ -345,7 +324,9 @@ export default function HvacPanel({ devices }: HvacPanelProps) {
                     onAdd={handleAddCard}
                     onRemove={handleRemoveCard}
                 />
-            ) : loading ? (
+            </div>
+
+            {loading ? (
                 <div className="glass-card" style={{ padding: 48, textAlign: "center" }}>
                     <div className="hvac-spinner" /><p style={{ color: "var(--text-secondary)", marginTop: 12 }}>Loading zones...</p>
                 </div>
