@@ -2,19 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// HVAC Zone Configuration interfaces
-interface HvacConfig {
-    zoneName: string;
+// HVAC Zone with dual relay: Pump + Heater
+interface HvacRelayConfig {
     relayMac: string;
     relayChannel: number;
-    sensorMac: string;
     mode: "manual" | "auto";
+    manualState: "ON" | "OFF";
+    lastAction: "ON" | "OFF" | null;
+    lastExecutedAt: string | null;
+}
+
+interface HvacConfig {
+    zoneName: string;
+    sensorMac: string;
+    // Pump relay — controlled by humidity
+    pump: HvacRelayConfig;
+    // Heater relay — controlled by temperature
+    heater: HvacRelayConfig;
+    // Setpoints
     tempSetpoint: number;
     tempDeadband: number;
     humSetpoint: number;
     humDeadband: number;
-    controlField: "temp" | "hum" | "both";
-    manualState: "ON" | "OFF";
     cooldownSeconds: number;
     enabled: boolean;
 }
@@ -29,14 +38,14 @@ export async function GET() {
             .sort({ createdAt: -1 })
             .toArray();
 
-        // Fetch sensor aliases for display
+        // Fetch sensor aliases
         const aliasesArr = await db.collection("device_aliases").find({}).toArray();
         const aliasMap: Record<string, string> = {};
         for (const a of aliasesArr) {
             aliasMap[a.mac] = a.alias;
         }
 
-        // Fetch latest sensor readings for all linked sensors
+        // Fetch latest sensor readings
         const sensorMacs = [...new Set(configs.map((c) => c.sensorMac).filter(Boolean))];
         const sensorMap: Record<string, { temp_c: number; hum_rh: number; ts: string; rssi?: number }> = {};
 
@@ -46,12 +55,7 @@ export async function GET() {
                 .aggregate([
                     { $match: { topic: "smartdwell/sensor/temp", "json.mac": { $in: sensorMacs } } },
                     { $sort: { _id: -1 } },
-                    {
-                        $group: {
-                            _id: "$json.mac",
-                            latestDoc: { $first: "$$ROOT" },
-                        },
-                    },
+                    { $group: { _id: "$json.mac", latestDoc: { $first: "$$ROOT" } } },
                 ])
                 .toArray();
 
@@ -68,22 +72,17 @@ export async function GET() {
             }
         }
 
-        // Enrich configs with sensor data and aliases
         const enriched = configs.map((config) => ({
             ...config,
             _id: config._id.toString(),
             sensorAlias: aliasMap[config.sensorMac] || config.sensorMac,
-            relayAlias: aliasMap[config.relayMac] || config.relayMac,
             sensorData: sensorMap[config.sensorMac] || null,
         }));
 
         return NextResponse.json({ success: true, data: enriched });
     } catch (error) {
         console.error("Error fetching HVAC configs:", error);
-        return NextResponse.json(
-            { success: false, error: "Failed to fetch HVAC configs" },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, error: "Failed to fetch HVAC configs" }, { status: 500 });
     }
 }
 
@@ -91,55 +90,19 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const {
-            _id,
-            zoneName,
-            relayMac,
-            relayChannel,
-            sensorMac,
-            mode,
-            tempSetpoint,
-            tempDeadband,
-            humSetpoint,
-            humDeadband,
-            controlField,
-            manualState,
-            cooldownSeconds,
-            enabled,
-        } = body as HvacConfig & { _id?: string };
+        const { _id, zoneName, sensorMac, pump, heater, tempSetpoint, tempDeadband, humSetpoint, humDeadband, cooldownSeconds, enabled } = body as HvacConfig & { _id?: string };
 
-        // Validate required fields
         if (!zoneName || typeof zoneName !== "string") {
-            return NextResponse.json(
-                { success: false, error: "zoneName is required" },
-                { status: 400 }
-            );
-        }
-        if (!relayMac || typeof relayMac !== "string") {
-            return NextResponse.json(
-                { success: false, error: "relayMac is required" },
-                { status: 400 }
-            );
+            return NextResponse.json({ success: false, error: "zoneName is required" }, { status: 400 });
         }
         if (!sensorMac || typeof sensorMac !== "string") {
-            return NextResponse.json(
-                { success: false, error: "sensorMac is required" },
-                { status: 400 }
-            );
+            return NextResponse.json({ success: false, error: "sensorMac is required" }, { status: 400 });
         }
-        if (!["manual", "auto"].includes(mode)) {
-            return NextResponse.json(
-                { success: false, error: "mode must be 'manual' or 'auto'" },
-                { status: 400 }
-            );
+        if (!pump?.relayMac) {
+            return NextResponse.json({ success: false, error: "Pump relay MAC is required" }, { status: 400 });
         }
-        if (mode === "auto") {
-            if (typeof tempSetpoint !== "number" || typeof humSetpoint !== "number") {
-                return NextResponse.json(
-                    { success: false, error: "Setpoints are required in auto mode" },
-                    { status: 400 }
-                );
-            }
+        if (!heater?.relayMac) {
+            return NextResponse.json({ success: false, error: "Heater relay MAC is required" }, { status: 400 });
         }
 
         const db = await getDb();
@@ -147,52 +110,42 @@ export async function POST(request: NextRequest) {
 
         const doc = {
             zoneName: zoneName.trim(),
-            relayMac: relayMac.trim().toUpperCase(),
-            relayChannel: relayChannel || 1,
             sensorMac: sensorMac.trim(),
-            mode: mode || "manual",
+            pump: {
+                relayMac: pump.relayMac.trim().toUpperCase(),
+                relayChannel: pump.relayChannel || 1,
+                mode: pump.mode || "manual",
+                manualState: pump.manualState || "OFF",
+                lastAction: pump.lastAction ?? null,
+                lastExecutedAt: pump.lastExecutedAt ?? null,
+            },
+            heater: {
+                relayMac: heater.relayMac.trim().toUpperCase(),
+                relayChannel: heater.relayChannel || 1,
+                mode: heater.mode || "manual",
+                manualState: heater.manualState || "OFF",
+                lastAction: heater.lastAction ?? null,
+                lastExecutedAt: heater.lastExecutedAt ?? null,
+            },
             tempSetpoint: tempSetpoint ?? 24,
             tempDeadband: tempDeadband ?? 1.0,
             humSetpoint: humSetpoint ?? 55,
             humDeadband: humDeadband ?? 5.0,
-            controlField: controlField || "temp",
-            manualState: manualState || "OFF",
             cooldownSeconds: cooldownSeconds || 60,
             enabled: enabled !== false,
             updatedAt: now,
         };
 
         if (_id) {
-            // Update existing config
-            await db.collection("hvac_configs").updateOne(
-                { _id: new ObjectId(_id) },
-                { $set: doc }
-            );
-            return NextResponse.json({
-                success: true,
-                message: "HVAC zone updated",
-                id: _id,
-            });
+            await db.collection("hvac_configs").updateOne({ _id: new ObjectId(_id) }, { $set: doc });
+            return NextResponse.json({ success: true, message: "HVAC zone updated", id: _id });
         } else {
-            // Create new config
-            const result = await db.collection("hvac_configs").insertOne({
-                ...doc,
-                lastAction: null,
-                lastExecutedAt: null,
-                createdAt: now,
-            });
-            return NextResponse.json({
-                success: true,
-                message: "HVAC zone created",
-                id: result.insertedId.toString(),
-            });
+            const result = await db.collection("hvac_configs").insertOne({ ...doc, createdAt: now });
+            return NextResponse.json({ success: true, message: "HVAC zone created", id: result.insertedId.toString() });
         }
     } catch (error) {
         console.error("Error saving HVAC config:", error);
-        return NextResponse.json(
-            { success: false, error: "Failed to save HVAC config" },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, error: "Failed to save HVAC config" }, { status: 500 });
     }
 }
 
@@ -201,32 +154,15 @@ export async function DELETE(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
-
-        if (!id) {
-            return NextResponse.json(
-                { success: false, error: "Zone ID is required" },
-                { status: 400 }
-            );
-        }
+        if (!id) return NextResponse.json({ success: false, error: "Zone ID is required" }, { status: 400 });
 
         const db = await getDb();
-        const result = await db
-            .collection("hvac_configs")
-            .deleteOne({ _id: new ObjectId(id) });
-
-        if (result.deletedCount === 0) {
-            return NextResponse.json(
-                { success: false, error: "Zone not found" },
-                { status: 404 }
-            );
-        }
+        const result = await db.collection("hvac_configs").deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) return NextResponse.json({ success: false, error: "Zone not found" }, { status: 404 });
 
         return NextResponse.json({ success: true, message: "HVAC zone deleted" });
     } catch (error) {
         console.error("Error deleting HVAC config:", error);
-        return NextResponse.json(
-            { success: false, error: "Failed to delete HVAC zone" },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, error: "Failed to delete HVAC zone" }, { status: 500 });
     }
 }

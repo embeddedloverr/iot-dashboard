@@ -3514,4 +3514,79 @@ body::before {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .hvac-relay-row-body {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+/* Live badge */
+.hvac-live-badge {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+/* Relay Row (Pump / Heater) */
+.hvac-relay-row {
+  padding: 14px 18px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.hvac-relay-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hvac-relay-row-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hvac-relay-row-title strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: block;
+}
+
+.hvac-relay-row-title .hvac-relay-mac {
+  font-size: 10px;
+  display: block;
+  margin-top: 1px;
+}
+
+.hvac-relay-row-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hvac-relay-row-reading {
+  flex: 1;
+}
+
+.hvac-relay-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.hvac-relay-row-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  text-align: right;
 }

@@ -3,61 +3,52 @@ import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 import { mqttPublish, buildRelayTopic, buildRelayPayload } from "@/lib/mqttClient";
 
-// POST: Manually control an HVAC relay
-// Body: { configId: string, action: "ON" | "OFF" }
+// POST: Manually control an HVAC relay (pump or heater)
+// Body: { configId: string, relay: "pump" | "heater", action: "ON" | "OFF" }
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { configId, action } = body;
+        const { configId, relay, action } = body;
 
         if (!configId || typeof configId !== "string") {
-            return NextResponse.json(
-                { success: false, error: "configId is required" },
-                { status: 400 }
-            );
+            return NextResponse.json({ success: false, error: "configId is required" }, { status: 400 });
+        }
+        if (!["pump", "heater"].includes(relay)) {
+            return NextResponse.json({ success: false, error: "relay must be 'pump' or 'heater'" }, { status: 400 });
         }
         if (!["ON", "OFF"].includes(action)) {
-            return NextResponse.json(
-                { success: false, error: "action must be 'ON' or 'OFF'" },
-                { status: 400 }
-            );
+            return NextResponse.json({ success: false, error: "action must be 'ON' or 'OFF'" }, { status: 400 });
         }
 
         const db = await getDb();
-        const config = await db
-            .collection("hvac_configs")
-            .findOne({ _id: new ObjectId(configId) });
+        const config = await db.collection("hvac_configs").findOne({ _id: new ObjectId(configId) });
 
         if (!config) {
-            return NextResponse.json(
-                { success: false, error: "HVAC zone not found" },
-                { status: 404 }
-            );
+            return NextResponse.json({ success: false, error: "HVAC zone not found" }, { status: 404 });
         }
 
-        if (!config.relayMac) {
-            return NextResponse.json(
-                { success: false, error: "No relay MAC configured for this zone" },
-                { status: 400 }
-            );
+        const relayConfig = config[relay as "pump" | "heater"];
+        if (!relayConfig?.relayMac) {
+            return NextResponse.json({ success: false, error: `No ${relay} relay MAC configured` }, { status: 400 });
         }
 
         // Build and publish MQTT command
-        const topic = buildRelayTopic(config.relayMac);
-        const payload = buildRelayPayload(config.relayChannel || 1, action as "ON" | "OFF");
+        const topic = buildRelayTopic(relayConfig.relayMac);
+        const payload = buildRelayPayload(relayConfig.relayChannel || 1, action as "ON" | "OFF");
         const result = await mqttPublish(topic, payload);
 
         const now = new Date();
+        const relayLabel = relay === "pump" ? "Pump" : "Heater";
 
         if (result.success) {
-            // Update HVAC config with new state
+            // Update the specific relay state
             await db.collection("hvac_configs").updateOne(
                 { _id: new ObjectId(configId) },
                 {
                     $set: {
-                        manualState: action,
-                        lastAction: action,
-                        lastExecutedAt: now,
+                        [`${relay}.manualState`]: action,
+                        [`${relay}.lastAction`]: action,
+                        [`${relay}.lastExecutedAt`]: now,
                         updatedAt: now,
                     },
                 }
@@ -66,42 +57,37 @@ export async function POST(request: NextRequest) {
             // Audit log
             await db.collection("relay_log").insertOne({
                 ruleId: configId,
-                ruleName: `HVAC: ${config.zoneName}`,
-                relayMac: config.relayMac,
+                ruleName: `HVAC ${relayLabel}: ${config.zoneName}`,
+                relayMac: relayConfig.relayMac,
                 mqttTopic: topic,
                 mqttPayload: payload,
                 sensorMac: config.sensorMac,
                 sensorData: null,
-                matchedCondition: `Manual control → ${action}`,
+                matchedCondition: `Manual ${relayLabel} control → ${action}`,
                 action,
-                channel: config.relayChannel || 1,
+                channel: relayConfig.relayChannel || 1,
                 success: true,
                 error: null,
                 executedAt: now,
-                source: "hvac_manual",
+                source: `hvac_manual_${relay}`,
             });
 
             return NextResponse.json({
                 success: true,
-                message: `HVAC relay ${action} command sent`,
+                message: `HVAC ${relayLabel} ${action} command sent`,
+                relay,
                 action,
                 topic,
                 payload,
             });
         } else {
             return NextResponse.json(
-                {
-                    success: false,
-                    error: `MQTT publish failed: ${result.error}`,
-                },
+                { success: false, error: `MQTT publish failed: ${result.error}` },
                 { status: 502 }
             );
         }
     } catch (error) {
         console.error("Error controlling HVAC relay:", error);
-        return NextResponse.json(
-            { success: false, error: "Failed to control HVAC relay" },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, error: "Failed to control HVAC relay" }, { status: 500 });
     }
 }

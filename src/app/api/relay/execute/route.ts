@@ -233,15 +233,15 @@ export async function GET() {
             executedCount++;
         }
 
-        // ========== HVAC AUTO-MODE EVALUATION ==========
+        // ========== HVAC AUTO-MODE EVALUATION (Dual Relay: Pump + Heater) ==========
         debug.push(`\n--- HVAC Auto-Mode Evaluation ---`);
 
         const hvacConfigs = await db
             .collection("hvac_configs")
-            .find({ mode: "auto", enabled: true })
+            .find({ enabled: true })
             .toArray();
 
-        debug.push(`Found ${hvacConfigs.length} HVAC auto-mode config(s)`);
+        debug.push(`Found ${hvacConfigs.length} enabled HVAC config(s)`);
 
         for (const config of hvacConfigs) {
             const zoneName = config.zoneName || config._id.toString();
@@ -253,111 +253,101 @@ export async function GET() {
             }
 
             if (!isPhysicallyValid(sData.temp_c, sData.hum_rh)) {
-                debug.push(`[HVAC: ${zoneName}] Sensor data invalid (temp=${sData.temp_c}, hum=${sData.hum_rh}), skipping`);
+                debug.push(`[HVAC: ${zoneName}] Sensor data invalid, skipping`);
                 continue;
             }
 
             debug.push(`[HVAC: ${zoneName}] Sensor: temp=${sData.temp_c}°C, hum=${sData.hum_rh}%`);
-            debug.push(`[HVAC: ${zoneName}] Setpoints: temp=${config.tempSetpoint}±${config.tempDeadband}°C, hum=${config.humSetpoint}±${config.humDeadband}%`);
 
-            // Check cooldown
-            if (config.lastExecutedAt) {
-                const elapsed = (now - new Date(config.lastExecutedAt).getTime()) / 1000;
-                const cooldown = config.cooldownSeconds || 60;
-                if (elapsed < cooldown) {
-                    debug.push(`[HVAC: ${zoneName}] Cooldown active: ${Math.ceil(cooldown - elapsed)}s remaining`);
-                    continue;
+            // --- Evaluate HEATER (temperature-driven) ---
+            const heater = config.heater;
+            if (heater && heater.mode === "auto" && heater.relayMac) {
+                debug.push(`[HVAC: ${zoneName}/Heater] Setpoint: ${config.tempSetpoint}±${config.tempDeadband}°C`);
+
+                let heaterCooldownOk = true;
+                if (heater.lastExecutedAt) {
+                    const elapsed = (now - new Date(heater.lastExecutedAt).getTime()) / 1000;
+                    const cd = config.cooldownSeconds || 60;
+                    if (elapsed < cd) {
+                        debug.push(`[HVAC: ${zoneName}/Heater] Cooldown: ${Math.ceil(cd - elapsed)}s remaining`);
+                        heaterCooldownOk = false;
+                    }
+                }
+
+                if (heaterCooldownOk) {
+                    let heaterAction: "ON" | "OFF" | null = null;
+                    const tUpper = config.tempSetpoint + (config.tempDeadband || 1);
+                    const tLower = config.tempSetpoint - (config.tempDeadband || 1);
+
+                    if (sData.temp_c < tLower) {
+                        heaterAction = "ON"; // Below target, heat needed
+                        debug.push(`[HVAC: ${zoneName}/Heater] Temp ${sData.temp_c}°C < ${tLower}°C → ON`);
+                    } else if (sData.temp_c > tUpper) {
+                        heaterAction = "OFF"; // Above target, stop heating
+                        debug.push(`[HVAC: ${zoneName}/Heater] Temp ${sData.temp_c}°C > ${tUpper}°C → OFF`);
+                    } else {
+                        debug.push(`[HVAC: ${zoneName}/Heater] Within dead-band, no action`);
+                    }
+
+                    if (heaterAction && heater.lastAction !== heaterAction) {
+                        const hTopic = buildRelayTopic(heater.relayMac);
+                        const hPayload = buildRelayPayload(heater.relayChannel || 1, heaterAction);
+                        const hResult = await mqttPublish(hTopic, hPayload);
+                        debug.push(`[HVAC: ${zoneName}/Heater] MQTT: ${hTopic} → ${JSON.stringify(hPayload)} — ${hResult.success ? "✓" : "✗ " + hResult.error}`);
+
+                        if (hResult.success) executedCount++;
+                        await db.collection("hvac_configs").updateOne({ _id: config._id }, { $set: { "heater.lastAction": heaterAction, "heater.lastExecutedAt": new Date(), updatedAt: new Date() } });
+                        await db.collection("relay_log").insertOne({ ruleId: config._id.toString(), ruleName: `HVAC Heater: ${zoneName}`, relayMac: heater.relayMac, mqttTopic: hTopic, mqttPayload: hPayload, sensorMac: config.sensorMac, sensorData: { temp_c: sData.temp_c, hum_rh: sData.hum_rh }, matchedCondition: `Heater auto → ${heaterAction}`, action: heaterAction, channel: heater.relayChannel || 1, success: hResult.success, error: hResult.error || null, executedAt: new Date(), source: "hvac_auto_heater" });
+                    } else if (heaterAction) {
+                        debug.push(`[HVAC: ${zoneName}/Heater] Action unchanged (${heaterAction}), skipping`);
+                    }
                 }
             }
 
-            // Dead-band logic: determine desired action
-            let desiredAction: "ON" | "OFF" | null = null;
-            const field = config.controlField || "temp";
+            // --- Evaluate PUMP (humidity-driven) ---
+            const pump = config.pump;
+            if (pump && pump.mode === "auto" && pump.relayMac) {
+                debug.push(`[HVAC: ${zoneName}/Pump] Setpoint: ${config.humSetpoint}±${config.humDeadband}%`);
 
-            if (field === "temp" || field === "both") {
-                const tempUpper = config.tempSetpoint + (config.tempDeadband || 1);
-                const tempLower = config.tempSetpoint - (config.tempDeadband || 1);
-                if (sData.temp_c > tempUpper) {
-                    desiredAction = "ON"; // Cooling needed
-                    debug.push(`[HVAC: ${zoneName}] Temp ${sData.temp_c}°C > ${tempUpper}°C (upper) → ON`);
-                } else if (sData.temp_c < tempLower) {
-                    desiredAction = "OFF"; // At or below target
-                    debug.push(`[HVAC: ${zoneName}] Temp ${sData.temp_c}°C < ${tempLower}°C (lower) → OFF`);
+                let pumpCooldownOk = true;
+                if (pump.lastExecutedAt) {
+                    const elapsed = (now - new Date(pump.lastExecutedAt).getTime()) / 1000;
+                    const cd = config.cooldownSeconds || 60;
+                    if (elapsed < cd) {
+                        debug.push(`[HVAC: ${zoneName}/Pump] Cooldown: ${Math.ceil(cd - elapsed)}s remaining`);
+                        pumpCooldownOk = false;
+                    }
+                }
+
+                if (pumpCooldownOk) {
+                    let pumpAction: "ON" | "OFF" | null = null;
+                    const hUpper = config.humSetpoint + (config.humDeadband || 5);
+                    const hLower = config.humSetpoint - (config.humDeadband || 5);
+
+                    if (sData.hum_rh > hUpper) {
+                        pumpAction = "ON"; // Too humid, pump needed
+                        debug.push(`[HVAC: ${zoneName}/Pump] Humidity ${sData.hum_rh}% > ${hUpper}% → ON`);
+                    } else if (sData.hum_rh < hLower) {
+                        pumpAction = "OFF"; // Below target, stop pump
+                        debug.push(`[HVAC: ${zoneName}/Pump] Humidity ${sData.hum_rh}% < ${hLower}% → OFF`);
+                    } else {
+                        debug.push(`[HVAC: ${zoneName}/Pump] Within dead-band, no action`);
+                    }
+
+                    if (pumpAction && pump.lastAction !== pumpAction) {
+                        const pTopic = buildRelayTopic(pump.relayMac);
+                        const pPayload = buildRelayPayload(pump.relayChannel || 1, pumpAction);
+                        const pResult = await mqttPublish(pTopic, pPayload);
+                        debug.push(`[HVAC: ${zoneName}/Pump] MQTT: ${pTopic} → ${JSON.stringify(pPayload)} — ${pResult.success ? "✓" : "✗ " + pResult.error}`);
+
+                        if (pResult.success) executedCount++;
+                        await db.collection("hvac_configs").updateOne({ _id: config._id }, { $set: { "pump.lastAction": pumpAction, "pump.lastExecutedAt": new Date(), updatedAt: new Date() } });
+                        await db.collection("relay_log").insertOne({ ruleId: config._id.toString(), ruleName: `HVAC Pump: ${zoneName}`, relayMac: pump.relayMac, mqttTopic: pTopic, mqttPayload: pPayload, sensorMac: config.sensorMac, sensorData: { temp_c: sData.temp_c, hum_rh: sData.hum_rh }, matchedCondition: `Pump auto → ${pumpAction}`, action: pumpAction, channel: pump.relayChannel || 1, success: pResult.success, error: pResult.error || null, executedAt: new Date(), source: "hvac_auto_pump" });
+                    } else if (pumpAction) {
+                        debug.push(`[HVAC: ${zoneName}/Pump] Action unchanged (${pumpAction}), skipping`);
+                    }
                 }
             }
-
-            if (field === "hum" || (field === "both" && desiredAction === null)) {
-                const humUpper = config.humSetpoint + (config.humDeadband || 5);
-                const humLower = config.humSetpoint - (config.humDeadband || 5);
-                if (sData.hum_rh > humUpper) {
-                    desiredAction = "ON"; // Dehumidification needed
-                    debug.push(`[HVAC: ${zoneName}] Humidity ${sData.hum_rh}% > ${humUpper}% (upper) → ON`);
-                } else if (sData.hum_rh < humLower) {
-                    desiredAction = desiredAction || "OFF";
-                    debug.push(`[HVAC: ${zoneName}] Humidity ${sData.hum_rh}% < ${humLower}% (lower) → OFF`);
-                }
-            }
-
-            // Within dead-band — no action needed
-            if (desiredAction === null) {
-                debug.push(`[HVAC: ${zoneName}] Within dead-band, no action needed`);
-                continue;
-            }
-
-            // Skip if action hasn't changed
-            if (config.lastAction === desiredAction) {
-                debug.push(`[HVAC: ${zoneName}] Action unchanged (${desiredAction}), skipping`);
-                continue;
-            }
-
-            // Publish MQTT command
-            if (!config.relayMac) {
-                debug.push(`[HVAC: ${zoneName}] ✗ No relay MAC configured, skipping`);
-                continue;
-            }
-
-            const hvacTopic = buildRelayTopic(config.relayMac);
-            const hvacPayload = buildRelayPayload(config.relayChannel || 1, desiredAction);
-            debug.push(`[HVAC: ${zoneName}] MQTT publish: ${hvacTopic} → ${JSON.stringify(hvacPayload)}`);
-
-            const hvacResult = await mqttPublish(hvacTopic, hvacPayload);
-
-            if (hvacResult.success) {
-                debug.push(`[HVAC: ${zoneName}] ✓ MQTT publish successful`);
-                executedCount++;
-            } else {
-                debug.push(`[HVAC: ${zoneName}] ✗ MQTT publish failed: ${hvacResult.error}`);
-            }
-
-            // Update config
-            await db.collection("hvac_configs").updateOne(
-                { _id: config._id },
-                {
-                    $set: {
-                        lastAction: desiredAction,
-                        lastExecutedAt: new Date(),
-                        updatedAt: new Date(),
-                    },
-                }
-            );
-
-            // Audit log
-            await db.collection("relay_log").insertOne({
-                ruleId: config._id.toString(),
-                ruleName: `HVAC: ${zoneName}`,
-                relayMac: config.relayMac,
-                mqttTopic: hvacTopic,
-                mqttPayload: hvacPayload,
-                sensorMac: config.sensorMac,
-                sensorData: { temp_c: sData.temp_c, hum_rh: sData.hum_rh },
-                matchedCondition: `Auto-mode dead-band → ${desiredAction}`,
-                action: desiredAction,
-                channel: config.relayChannel || 1,
-                success: hvacResult.success,
-                error: hvacResult.error || null,
-                executedAt: new Date(),
-                source: "hvac_auto",
-            });
         }
 
         return NextResponse.json({
@@ -377,3 +367,4 @@ export async function GET() {
         );
     }
 }
+
