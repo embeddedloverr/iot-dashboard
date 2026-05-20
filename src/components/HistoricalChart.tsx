@@ -35,11 +35,15 @@ const ranges = [
     { value: "30d", label: "30D" },
 ];
 
-function formatTimestamp(ts: string): string {
+function formatTimestamp(ts: string, range: string): string {
     if (!ts) return "";
     const parts = ts.match(/(\d{2})-(\d{2})-(\d{4})\s(\d{2}):(\d{2})/);
     if (!parts) return ts;
-    return `${parts[4]}:${parts[5]}`;
+    const [, dd, mm, , hh, mi] = parts;
+    if (range === "7d" || range === "30d") {
+        return `${dd}/${mm} ${hh}:${mi}`;
+    }
+    return `${hh}:${mi}`;
 }
 
 interface CustomTooltipProps {
@@ -73,7 +77,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
 export default function HistoricalChart({ data, range, onRangeChange, loading }: HistoricalChartProps) {
     const chartData = data.map((d) => ({
-        time: formatTimestamp(d.ts),
+        time: formatTimestamp(d.ts, range),
         fullTime: d.ts,
         Temperature: d.temp_c,
         Humidity: d.hum_rh,
