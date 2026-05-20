@@ -89,6 +89,19 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
                     {user && user.role === "superadmin" && (
                         <button
                             onClick={() => {
+                                onSectionChange("hvac");
+                                setMobileOpen(false);
+                            }}
+                            className={`sidebar-nav-item ${activeSection === "hvac" ? "active" : ""}`}
+                        >
+                            <span className="nav-icon">🏠</span>
+                            <span>HVAC</span>
+                        </button>
+                    )}
+
+                    {user && user.role === "superadmin" && (
+                        <button
+                            onClick={() => {
                                 onSectionChange("relay");
                                 setMobileOpen(false);
                             }}

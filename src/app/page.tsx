@@ -9,6 +9,7 @@ import StatsGrid from "@/components/StatsGrid";
 import DeviceSelector from "@/components/DeviceSelector";
 import AlertConfigPanel from "@/components/AlertConfig";
 import RelayRulesPanel from "@/components/RelayRulesPanel";
+import HvacPanel from "@/components/HvacPanel";
 import { useAuth } from "@/components/AuthProvider";
 
 interface SensorReading {
@@ -203,6 +204,13 @@ export default function Dashboard() {
             devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || "" }))}
             aliases={aliases}
             onAliasUpdate={fetchAliases}
+          />
+        )}
+
+        {activeSection === "hvac" && isSuperAdmin && (
+          <HvacPanel
+            devices={filteredDevices.map((d) => ({ mac: d.mac, alias: aliases[d.mac] || d.mac }))}
+            aliases={aliases}
           />
         )}
 
