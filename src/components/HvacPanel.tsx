@@ -43,7 +43,19 @@ const EMPTY_ZONE = (): HvacZone => ({
     cooldownSeconds: 60, enabled: true,
 });
 
-export default function HvacPanel() {
+interface DeviceInfo { mac: string; alias: string; }
+interface HvacPanelProps { devices: DeviceInfo[]; }
+
+interface SensorCard {
+    _id: string;
+    sensorMac: string;
+    label: string;
+    sensorAlias: string;
+    sensorData: { temp_c: number; hum_rh: number; ts: string; rssi?: number } | null;
+}
+
+export default function HvacPanel({ devices }: HvacPanelProps) {
+    const [activeTab, setActiveTab] = useState<"zones" | "cards">("zones");
     const [zones, setZones] = useState<HvacZone[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -53,6 +65,10 @@ export default function HvacPanel() {
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const [controlling, setControlling] = useState<string | null>(null);
 
+    const [cards, setCards] = useState<SensorCard[]>([]);
+    const [cardPickerMac, setCardPickerMac] = useState("");
+    const [addingCard, setAddingCard] = useState(false);
+
     const showMsg = (text: string, type: "success" | "error", ms = 4000) => { setMessage({ text, type }); setTimeout(() => setMessage(null), ms); };
 
     const fetchZones = useCallback(async () => {
@@ -61,8 +77,36 @@ export default function HvacPanel() {
         finally { setLoading(false); }
     }, []);
 
-    useEffect(() => { fetchZones(); }, [fetchZones]);
-    useEffect(() => { const i = setInterval(fetchZones, 15000); return () => clearInterval(i); }, [fetchZones]);
+    const fetchCards = useCallback(async () => {
+        try { const res = await fetch("/api/hvac/cards"); const data = await res.json(); if (data.success) setCards(data.data); }
+        catch (err) { console.error("Failed to fetch sensor cards:", err); }
+    }, []);
+
+    useEffect(() => { fetchZones(); fetchCards(); }, [fetchZones, fetchCards]);
+    useEffect(() => {
+        const i = setInterval(() => { fetchZones(); fetchCards(); }, 15000);
+        return () => clearInterval(i);
+    }, [fetchZones, fetchCards]);
+
+    const handleAddCard = async () => {
+        if (!cardPickerMac) { showMsg("Select a sensor to add", "error"); return; }
+        setAddingCard(true);
+        try {
+            const res = await fetch("/api/hvac/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sensorMac: cardPickerMac }) });
+            const data = await res.json();
+            if (data.success) { showMsg("✅ Sensor card added", "success"); setCardPickerMac(""); fetchCards(); }
+            else { showMsg(data.error || "Failed to add", "error"); }
+        } catch { showMsg("Network error", "error"); } finally { setAddingCard(false); }
+    };
+
+    const handleRemoveCard = async (id: string) => {
+        try {
+            const res = await fetch(`/api/hvac/cards?id=${id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (data.success) { showMsg("✅ Card removed", "success"); fetchCards(); }
+            else { showMsg(data.error || "Failed to remove", "error"); }
+        } catch { showMsg("Network error", "error"); }
+    };
 
     const openCreate = () => { setEditForm(EMPTY_ZONE()); setShowModal(true); };
     const openEdit = (zone: HvacZone) => {
@@ -259,14 +303,49 @@ export default function HvacPanel() {
                     </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <span className="hvac-zone-count">{zones.length} zone{zones.length !== 1 ? "s" : ""}</span>
-                    <button className="hvac-btn-primary" onClick={openCreate}>+ Add Zone</button>
+                    {activeTab === "zones" ? (
+                        <>
+                            <span className="hvac-zone-count">{zones.length} zone{zones.length !== 1 ? "s" : ""}</span>
+                            <button className="hvac-btn-primary" onClick={openCreate}>+ Add Zone</button>
+                        </>
+                    ) : (
+                        <span className="hvac-zone-count">{cards.length} card{cards.length !== 1 ? "s" : ""}</span>
+                    )}
                 </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid rgba(100,100,255,0.15)" }}>
+                {(["zones", "cards"] as const).map((t) => (
+                    <button
+                        key={t}
+                        onClick={() => setActiveTab(t)}
+                        style={{
+                            padding: "10px 18px", background: "transparent", border: "none", cursor: "pointer",
+                            color: activeTab === t ? "var(--accent, #6366f1)" : "var(--text-secondary)",
+                            fontWeight: activeTab === t ? 700 : 500, fontSize: 13,
+                            borderBottom: activeTab === t ? "2px solid var(--accent, #6366f1)" : "2px solid transparent",
+                            marginBottom: -1,
+                        }}
+                    >
+                        {t === "zones" ? "🏠 Zones" : "📡 Sensor Cards"}
+                    </button>
+                ))}
             </div>
 
             {message && <div className={`alert-message ${message.type}`} style={{ marginBottom: 16 }}>{message.text}</div>}
 
-            {loading ? (
+            {activeTab === "cards" ? (
+                <SensorCardsTab
+                    cards={cards}
+                    devices={devices}
+                    pickerMac={cardPickerMac}
+                    setPickerMac={setCardPickerMac}
+                    adding={addingCard}
+                    onAdd={handleAddCard}
+                    onRemove={handleRemoveCard}
+                />
+            ) : loading ? (
                 <div className="glass-card" style={{ padding: 48, textAlign: "center" }}>
                     <div className="hvac-spinner" /><p style={{ color: "var(--text-secondary)", marginTop: 12 }}>Loading zones...</p>
                 </div>
@@ -454,5 +533,109 @@ export default function HvacPanel() {
                 </div>
             )}
         </div>
+    );
+}
+
+interface SensorCardsTabProps {
+    cards: SensorCard[];
+    devices: DeviceInfo[];
+    pickerMac: string;
+    setPickerMac: (v: string) => void;
+    adding: boolean;
+    onAdd: () => void;
+    onRemove: (id: string) => void;
+}
+
+function SensorCardsTab({ cards, devices, pickerMac, setPickerMac, adding, onAdd, onRemove }: SensorCardsTabProps) {
+    const pinnedMacs = new Set(cards.map((c) => c.sensorMac));
+    const available = devices.filter((d) => !pinnedMacs.has(d.mac));
+
+    const fmtAge = (ts: string) => {
+        if (!ts) return "no data";
+        const m = ts.match(/(\d{2})-(\d{2})-(\d{4})\s(\d{2}):(\d{2})/);
+        if (!m) return ts;
+        return `${m[4]}:${m[5]}`;
+    };
+
+    return (
+        <>
+            {/* Add picker */}
+            <div className="glass-card" style={{ padding: 16, marginBottom: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>➕ Pin a sensor:</span>
+                <select
+                    className="admin-input"
+                    style={{ flex: 1, minWidth: 200, maxWidth: 400 }}
+                    value={pickerMac}
+                    onChange={(e) => setPickerMac(e.target.value)}
+                    disabled={available.length === 0}
+                >
+                    <option value="">{available.length === 0 ? "— All sensors pinned —" : "— Select a sensor —"}</option>
+                    {available.map((d) => (
+                        <option key={d.mac} value={d.mac}>{d.alias || d.mac} ({d.mac})</option>
+                    ))}
+                </select>
+                <button
+                    className="hvac-btn-primary"
+                    onClick={onAdd}
+                    disabled={!pickerMac || adding}
+                >
+                    {adding ? "Adding..." : "Add Card"}
+                </button>
+            </div>
+
+            {cards.length === 0 ? (
+                <div className="glass-card" style={{ padding: 48, textAlign: "center" }}>
+                    <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
+                    <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No sensor cards pinned</p>
+                    <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Use the picker above to pin existing sensors for monitoring.</p>
+                </div>
+            ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    {cards.map((c) => {
+                        const hasData = !!c.sensorData;
+                        const temp = c.sensorData?.temp_c;
+                        const hum = c.sensorData?.hum_rh;
+                        const tempColor = temp == null ? "#666" : temp >= 35 ? "#ef4444" : temp >= 28 ? "#f59e0b" : "#10b981";
+                        const humColor = hum == null ? "#666" : hum >= 80 ? "#ef4444" : hum >= 65 ? "#f59e0b" : "#3b82f6";
+                        return (
+                            <div key={c._id} className="glass-card" style={{ padding: 14, position: "relative" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            {c.sensorAlias}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>{c.sensorMac}</div>
+                                    </div>
+                                    <button
+                                        onClick={() => onRemove(c._id)}
+                                        title="Remove"
+                                        style={{ background: "transparent", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 16, padding: 4 }}
+                                    >
+                                        🗑️
+                                    </button>
+                                </div>
+                                <div style={{ display: "flex", gap: 16, alignItems: "center", justifyContent: "space-around" }}>
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>🌡️ Temp</div>
+                                        <div style={{ fontSize: 22, fontWeight: 700, color: tempColor }}>
+                                            {temp != null ? temp.toFixed(1) : "--"}<span style={{ fontSize: 12 }}>°C</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>💧 Hum</div>
+                                        <div style={{ fontSize: 22, fontWeight: 700, color: humColor }}>
+                                            {hum != null ? hum.toFixed(1) : "--"}<span style={{ fontSize: 12 }}>%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 10, textAlign: "right" }}>
+                                    {hasData ? `Last: ${fmtAge(c.sensorData!.ts)}` : "No data"}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </>
     );
 }
