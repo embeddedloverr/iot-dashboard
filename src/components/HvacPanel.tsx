@@ -17,8 +17,11 @@ interface HvacZone {
     sensorMac: string;
     pump: HvacRelayState;
     heater: HvacRelayState;
+    ac: HvacRelayState;
     tempSetpoint: number;
     tempDeadband: number;
+    acTempSetpoint: number;
+    acTempDeadband: number;
     humSetpoint: number;
     humDeadband: number;
     cooldownSeconds: number;
@@ -35,8 +38,9 @@ interface HvacPanelProps { devices: DeviceInfo[]; aliases: Record<string, string
 const EMPTY_RELAY = (): HvacRelayState => ({ relayMac: "", relayChannel: 1, mode: "manual", manualState: "OFF", lastAction: null, lastExecutedAt: null });
 const EMPTY_ZONE = (): HvacZone => ({
     zoneName: "", sensorMac: "",
-    pump: EMPTY_RELAY(), heater: EMPTY_RELAY(),
+    pump: EMPTY_RELAY(), heater: EMPTY_RELAY(), ac: EMPTY_RELAY(),
     tempSetpoint: 24, tempDeadband: 1.0,
+    acTempSetpoint: 26, acTempDeadband: 1.0,
     humSetpoint: 55, humDeadband: 5.0,
     cooldownSeconds: 60, enabled: true,
 });
@@ -63,12 +67,20 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
     useEffect(() => { const i = setInterval(fetchZones, 15000); return () => clearInterval(i); }, [fetchZones]);
 
     const openCreate = () => { setEditForm(EMPTY_ZONE()); setShowModal(true); };
-    const openEdit = (zone: HvacZone) => { setEditForm({ ...zone, pump: { ...(zone.pump || EMPTY_RELAY()) }, heater: { ...(zone.heater || EMPTY_RELAY()) } }); setShowModal(true); };
+    const openEdit = (zone: HvacZone) => {
+        setEditForm({
+            ...zone,
+            pump: { ...(zone.pump || EMPTY_RELAY()) },
+            heater: { ...(zone.heater || EMPTY_RELAY()) },
+            ac: { ...(zone.ac || EMPTY_RELAY()) },
+            acTempSetpoint: zone.acTempSetpoint ?? 26,
+            acTempDeadband: zone.acTempDeadband ?? 1.0,
+        });
+        setShowModal(true);
+    };
 
     const handleSave = async () => {
         if (!editForm.zoneName.trim()) { showMsg("Zone name is required", "error"); return; }
-        if (!editForm.pump?.relayMac?.trim()) { showMsg("Pump relay MAC is required", "error"); return; }
-        if (!editForm.heater?.relayMac?.trim()) { showMsg("Heater relay MAC is required", "error"); return; }
         if (!editForm.sensorMac) { showMsg("Select a sensor", "error"); return; }
         setSaving(true);
         try {
@@ -84,14 +96,15 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         catch { showMsg("Network error", "error"); }
     };
 
-    const handleControl = async (zone: HvacZone, relay: "pump" | "heater", action: "ON" | "OFF") => {
+    const handleControl = async (zone: HvacZone, relay: "pump" | "heater" | "ac", action: "ON" | "OFF") => {
         if (!zone._id) return;
         const key = `${zone._id}_${relay}`;
         setControlling(key);
         try {
             const res = await fetch("/api/hvac/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ configId: zone._id, relay, action }) });
             const data = await res.json();
-            if (data.success) { showMsg(`⚡ ${zone.zoneName}: ${relay === "pump" ? "Pump" : "Heater"} ${action}`, "success"); fetchZones(); }
+            const label = relay === "pump" ? "Pump" : relay === "heater" ? "Heater" : "AC";
+            if (data.success) { showMsg(`⚡ ${zone.zoneName}: ${label} ${action}`, "success"); fetchZones(); }
             else { showMsg(data.error || "Control failed", "error"); }
         } catch { showMsg("Network error", "error"); } finally { setControlling(null); }
     };
@@ -101,20 +114,21 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         catch { showMsg("Failed to toggle", "error"); }
     };
 
-    const handleModeSwitch = async (zone: HvacZone, relay: "pump" | "heater") => {
+    const handleModeSwitch = async (zone: HvacZone, relay: "pump" | "heater" | "ac") => {
         const relayData = zone[relay] || EMPTY_RELAY();
         const newMode = relayData.mode === "manual" ? "auto" : "manual";
         const updated = { ...zone, [relay]: { ...relayData, mode: newMode } };
-        try { await fetch("/api/hvac/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) }); showMsg(`${zone.zoneName}: ${relay === "pump" ? "Pump" : "Heater"} → ${newMode}`, "success"); fetchZones(); }
+        const label = relay === "pump" ? "Pump" : relay === "heater" ? "Heater" : "AC";
+        try { await fetch("/api/hvac/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) }); showMsg(`${zone.zoneName}: ${label} → ${newMode}`, "success"); fetchZones(); }
         catch { showMsg("Failed to switch mode", "error"); }
     };
 
     const formatDate = (s: string) => new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
     // --- Relay row sub-component ---
-    const RelayRow = ({ zone, relay, label, icon, field, setpoint, deadband, unit, currentVal, statusColor }: {
-        zone: HvacZone; relay: "pump" | "heater"; label: string; icon: string;
-        field: string; setpoint: number; deadband: number; unit: string;
+    const RelayRow = ({ zone, relay, label, icon, setpoint, deadband, unit, currentVal, statusColor }: {
+        zone: HvacZone; relay: "pump" | "heater" | "ac"; label: string; icon: string;
+        setpoint: number; deadband: number; unit: string;
         currentVal: number | null; statusColor: string;
     }) => {
         const r = zone[relay] || { relayMac: "", relayChannel: 1, mode: "manual" as const, manualState: "OFF" as const, lastAction: null, lastExecutedAt: null };
@@ -191,6 +205,52 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
         );
     };
 
+    // --- Modal relay config section ---
+    const RelayFormSection = ({ relay, label, icon, borderColor, setpointLabel, setpointIcon, setpointValue, deadbandValue, setpointMin, setpointMax, setpointStep, deadbandMin, deadbandMax, deadbandStep, onSetpointChange, onDeadbandChange }: {
+        relay: "pump" | "heater" | "ac"; label: string; icon: string; borderColor: string;
+        setpointLabel: string; setpointIcon: string;
+        setpointValue: number; deadbandValue: number;
+        setpointMin: number; setpointMax: number; setpointStep: number;
+        deadbandMin: number; deadbandMax: number; deadbandStep: number;
+        onSetpointChange: (v: number) => void; onDeadbandChange: (v: number) => void;
+    }) => {
+        const relayData = editForm[relay] || EMPTY_RELAY();
+        return (
+            <div className="relay-form-section" style={{ borderColor }}>
+                <div className="relay-form-section-title">{icon} {label}</div>
+                <div className="relay-form-grid">
+                    <div className="admin-form-group">
+                        <label>{label} Relay MAC</label>
+                        <input type="text" className="admin-input" placeholder="AA:BB:CC:DD:EE:FF" style={{ fontFamily: "monospace" }} value={relayData.relayMac} onChange={(e) => setEditForm({ ...editForm, [relay]: { ...relayData, relayMac: e.target.value.toUpperCase() } })} />
+                    </div>
+                    <div className="admin-form-group">
+                        <label>Channel</label>
+                        <select className="admin-input relay-select" value={relayData.relayChannel} onChange={(e) => setEditForm({ ...editForm, [relay]: { ...relayData, relayChannel: Number(e.target.value) } })}>
+                            <option value={1}>Ch 1</option><option value={2}>Ch 2</option><option value={3}>Ch 3</option><option value={4}>Ch 4</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="relay-form-grid" style={{ marginTop: 12 }}>
+                    <div className="admin-form-group">
+                        <label>Mode</label>
+                        <div className="hvac-mode-selector">
+                            <button className={`hvac-mode-option ${relayData.mode === "manual" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, [relay]: { ...relayData, mode: "manual" } })}><span>🔧</span><div><strong>Manual</strong></div></button>
+                            <button className={`hvac-mode-option ${relayData.mode === "auto" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, [relay]: { ...relayData, mode: "auto" } })}><span>🤖</span><div><strong>Auto</strong></div></button>
+                        </div>
+                    </div>
+                    <div className="admin-form-group">
+                        <label>{setpointIcon} {setpointLabel}</label>
+                        <input type="number" className="admin-input" step={setpointStep} min={setpointMin} max={setpointMax} value={setpointValue} onChange={(e) => onSetpointChange(Number(e.target.value))} />
+                        <div style={{ marginTop: 6 }}>
+                            <label style={{ fontSize: 11 }}>± Dead-band</label>
+                            <input type="number" className="admin-input" step={deadbandStep} min={deadbandMin} max={deadbandMax} value={deadbandValue} onChange={(e) => onDeadbandChange(Number(e.target.value))} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             {/* Header */}
@@ -199,7 +259,7 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                     <span style={{ fontSize: 28 }}>🏠</span>
                     <div>
                         <h2>HVAC Control</h2>
-                        <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>Manage HVAC zones — Pump (humidity) & Heater (temperature)</p>
+                        <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>Manage Pump (humidity) · Heater (temp) · AC (cooling)</p>
                     </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -218,7 +278,7 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                 <div className="glass-card" style={{ padding: 48, textAlign: "center" }}>
                     <div style={{ fontSize: 48, marginBottom: 12 }}>🏠</div>
                     <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No HVAC zones configured</p>
-                    <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 20 }}>Create zones with Pump & Heater relay control</p>
+                    <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 20 }}>Create zones with Pump, Heater & AC relay control</p>
                     <button className="hvac-btn-primary" onClick={openCreate}>+ Create First Zone</button>
                 </div>
             ) : (
@@ -246,15 +306,23 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                                 {/* Heater Relay Row */}
                                 <RelayRow
                                     zone={zone} relay="heater" label="Heater" icon="🔥"
-                                    field="temp" setpoint={zone.tempSetpoint} deadband={zone.tempDeadband} unit="°C"
+                                    setpoint={zone.tempSetpoint} deadband={zone.tempDeadband} unit="°C"
                                     currentVal={hasData ? zone.sensorData!.temp_c : null}
                                     statusColor={hasData ? (zone.sensorData!.temp_c >= 38 ? "#ef4444" : zone.sensorData!.temp_c >= 30 ? "#f59e0b" : "#10b981") : "#666"}
+                                />
+
+                                {/* AC Relay Row */}
+                                <RelayRow
+                                    zone={zone} relay="ac" label="AC" icon="❄️"
+                                    setpoint={zone.acTempSetpoint ?? 26} deadband={zone.acTempDeadband ?? 1} unit="°C"
+                                    currentVal={hasData ? zone.sensorData!.temp_c : null}
+                                    statusColor={hasData ? (zone.sensorData!.temp_c >= 35 ? "#ef4444" : zone.sensorData!.temp_c >= 28 ? "#f59e0b" : "#3b82f6") : "#666"}
                                 />
 
                                 {/* Pump Relay Row */}
                                 <RelayRow
                                     zone={zone} relay="pump" label="Pump" icon="💧"
-                                    field="hum" setpoint={zone.humSetpoint} deadband={zone.humDeadband} unit="%"
+                                    setpoint={zone.humSetpoint} deadband={zone.humDeadband} unit="%"
                                     currentVal={hasData ? zone.sensorData!.hum_rh : null}
                                     statusColor={hasData ? (zone.sensorData!.hum_rh >= 80 ? "#ef4444" : zone.sensorData!.hum_rh >= 65 ? "#f59e0b" : "#3b82f6") : "#666"}
                                 />
@@ -312,72 +380,40 @@ export default function HvacPanel({ devices, aliases }: HvacPanelProps) {
                             </div>
 
                             {/* Heater Config */}
-                            <div className="relay-form-section" style={{ borderColor: "rgba(239, 68, 68, 0.2)" }}>
-                                <div className="relay-form-section-title">🔥 Heater Relay — Temperature Control</div>
-                                <div className="relay-form-grid">
-                                    <div className="admin-form-group">
-                                        <label>Heater Relay MAC</label>
-                                        <input type="text" className="admin-input" placeholder="AA:BB:CC:DD:EE:FF" style={{ fontFamily: "monospace" }} value={editForm.heater.relayMac} onChange={(e) => setEditForm({ ...editForm, heater: { ...editForm.heater, relayMac: e.target.value.toUpperCase() } })} />
-                                    </div>
-                                    <div className="admin-form-group">
-                                        <label>Channel</label>
-                                        <select className="admin-input relay-select" value={editForm.heater.relayChannel} onChange={(e) => setEditForm({ ...editForm, heater: { ...editForm.heater, relayChannel: Number(e.target.value) } })}>
-                                            <option value={1}>Ch 1</option><option value={2}>Ch 2</option><option value={3}>Ch 3</option><option value={4}>Ch 4</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="relay-form-grid" style={{ marginTop: 12 }}>
-                                    <div className="admin-form-group">
-                                        <label>Mode</label>
-                                        <div className="hvac-mode-selector">
-                                            <button className={`hvac-mode-option ${editForm.heater.mode === "manual" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, heater: { ...editForm.heater, mode: "manual" } })}><span>🔧</span><div><strong>Manual</strong></div></button>
-                                            <button className={`hvac-mode-option ${editForm.heater.mode === "auto" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, heater: { ...editForm.heater, mode: "auto" } })}><span>🤖</span><div><strong>Auto</strong></div></button>
-                                        </div>
-                                    </div>
-                                    <div className="admin-form-group">
-                                        <label>🌡️ Temp Setpoint (°C)</label>
-                                        <input type="number" className="admin-input" step={0.5} min={10} max={45} value={editForm.tempSetpoint} onChange={(e) => setEditForm({ ...editForm, tempSetpoint: Number(e.target.value) })} />
-                                        <div style={{ marginTop: 6 }}>
-                                            <label style={{ fontSize: 11 }}>± Dead-band</label>
-                                            <input type="number" className="admin-input" step={0.5} min={0.5} max={5} value={editForm.tempDeadband} onChange={(e) => setEditForm({ ...editForm, tempDeadband: Number(e.target.value) })} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <RelayFormSection
+                                relay="heater" label="Heater Relay — Temperature Control" icon="🔥"
+                                borderColor="rgba(239, 68, 68, 0.2)"
+                                setpointLabel="Temp Setpoint (°C)" setpointIcon="🌡️"
+                                setpointValue={editForm.tempSetpoint} deadbandValue={editForm.tempDeadband}
+                                setpointMin={10} setpointMax={45} setpointStep={0.5}
+                                deadbandMin={0.5} deadbandMax={5} deadbandStep={0.5}
+                                onSetpointChange={(v) => setEditForm({ ...editForm, tempSetpoint: v })}
+                                onDeadbandChange={(v) => setEditForm({ ...editForm, tempDeadband: v })}
+                            />
+
+                            {/* AC Config */}
+                            <RelayFormSection
+                                relay="ac" label="AC Relay — Cooling Control" icon="❄️"
+                                borderColor="rgba(56, 189, 248, 0.25)"
+                                setpointLabel="AC Setpoint (°C)" setpointIcon="❄️"
+                                setpointValue={editForm.acTempSetpoint} deadbandValue={editForm.acTempDeadband}
+                                setpointMin={16} setpointMax={32} setpointStep={0.5}
+                                deadbandMin={0.5} deadbandMax={5} deadbandStep={0.5}
+                                onSetpointChange={(v) => setEditForm({ ...editForm, acTempSetpoint: v })}
+                                onDeadbandChange={(v) => setEditForm({ ...editForm, acTempDeadband: v })}
+                            />
 
                             {/* Pump Config */}
-                            <div className="relay-form-section" style={{ borderColor: "rgba(59, 130, 246, 0.2)" }}>
-                                <div className="relay-form-section-title">💧 Pump Relay — Humidity Control</div>
-                                <div className="relay-form-grid">
-                                    <div className="admin-form-group">
-                                        <label>Pump Relay MAC</label>
-                                        <input type="text" className="admin-input" placeholder="AA:BB:CC:DD:EE:FF" style={{ fontFamily: "monospace" }} value={editForm.pump.relayMac} onChange={(e) => setEditForm({ ...editForm, pump: { ...editForm.pump, relayMac: e.target.value.toUpperCase() } })} />
-                                    </div>
-                                    <div className="admin-form-group">
-                                        <label>Channel</label>
-                                        <select className="admin-input relay-select" value={editForm.pump.relayChannel} onChange={(e) => setEditForm({ ...editForm, pump: { ...editForm.pump, relayChannel: Number(e.target.value) } })}>
-                                            <option value={1}>Ch 1</option><option value={2}>Ch 2</option><option value={3}>Ch 3</option><option value={4}>Ch 4</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="relay-form-grid" style={{ marginTop: 12 }}>
-                                    <div className="admin-form-group">
-                                        <label>Mode</label>
-                                        <div className="hvac-mode-selector">
-                                            <button className={`hvac-mode-option ${editForm.pump.mode === "manual" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, pump: { ...editForm.pump, mode: "manual" } })}><span>🔧</span><div><strong>Manual</strong></div></button>
-                                            <button className={`hvac-mode-option ${editForm.pump.mode === "auto" ? "active" : ""}`} onClick={() => setEditForm({ ...editForm, pump: { ...editForm.pump, mode: "auto" } })}><span>🤖</span><div><strong>Auto</strong></div></button>
-                                        </div>
-                                    </div>
-                                    <div className="admin-form-group">
-                                        <label>💧 Humidity Setpoint (%)</label>
-                                        <input type="number" className="admin-input" step={1} min={20} max={90} value={editForm.humSetpoint} onChange={(e) => setEditForm({ ...editForm, humSetpoint: Number(e.target.value) })} />
-                                        <div style={{ marginTop: 6 }}>
-                                            <label style={{ fontSize: 11 }}>± Dead-band</label>
-                                            <input type="number" className="admin-input" step={1} min={1} max={15} value={editForm.humDeadband} onChange={(e) => setEditForm({ ...editForm, humDeadband: Number(e.target.value) })} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <RelayFormSection
+                                relay="pump" label="Pump Relay — Humidity Control" icon="💧"
+                                borderColor="rgba(59, 130, 246, 0.2)"
+                                setpointLabel="Humidity Setpoint (%)" setpointIcon="💧"
+                                setpointValue={editForm.humSetpoint} deadbandValue={editForm.humDeadband}
+                                setpointMin={20} setpointMax={90} setpointStep={1}
+                                deadbandMin={1} deadbandMax={15} deadbandStep={1}
+                                onSetpointChange={(v) => setEditForm({ ...editForm, humSetpoint: v })}
+                                onDeadbandChange={(v) => setEditForm({ ...editForm, humDeadband: v })}
+                            />
 
                             {/* Advanced */}
                             <div className="relay-form-section">

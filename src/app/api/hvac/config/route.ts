@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// HVAC Zone with dual relay: Pump + Heater
+// HVAC Zone with triple relay: Pump + Heater + AC
 interface HvacRelayConfig {
     relayMac: string;
     relayChannel: number;
@@ -15,13 +15,16 @@ interface HvacRelayConfig {
 interface HvacConfig {
     zoneName: string;
     sensorMac: string;
-    // Pump relay — controlled by humidity
-    pump: HvacRelayConfig;
-    // Heater relay — controlled by temperature
-    heater: HvacRelayConfig;
-    // Setpoints
+    pump: HvacRelayConfig;      // Pump — humidity-driven
+    heater: HvacRelayConfig;    // Heater — temp-driven (ON when cold)
+    ac: HvacRelayConfig;        // AC — temp-driven (ON when hot)
+    // Heater setpoints
     tempSetpoint: number;
     tempDeadband: number;
+    // AC setpoints (separate from heater)
+    acTempSetpoint: number;
+    acTempDeadband: number;
+    // Humidity setpoints (pump)
     humSetpoint: number;
     humDeadband: number;
     cooldownSeconds: number;
@@ -75,17 +78,21 @@ export async function GET() {
         const defaultRelay = { relayMac: "", relayChannel: 1, mode: "manual" as const, manualState: "OFF" as const, lastAction: null, lastExecutedAt: null };
 
         const enriched = configs.map((config) => {
-            // Backward compatibility: normalize old single-relay schema to dual-relay
+            // Backward compatibility: normalize old schemas
             const pump = config.pump || { ...defaultRelay, relayMac: config.relayMac || "", relayChannel: config.relayChannel || 1, mode: config.mode || "manual", manualState: config.manualState || "OFF", lastAction: config.lastAction || null, lastExecutedAt: config.lastExecutedAt || null };
             const heater = config.heater || { ...defaultRelay };
+            const ac = config.ac || { ...defaultRelay };
 
             return {
                 ...config,
                 _id: config._id.toString(),
                 pump,
                 heater,
+                ac,
                 tempSetpoint: config.tempSetpoint ?? 24,
                 tempDeadband: config.tempDeadband ?? 1.0,
+                acTempSetpoint: config.acTempSetpoint ?? 26,
+                acTempDeadband: config.acTempDeadband ?? 1.0,
                 humSetpoint: config.humSetpoint ?? 55,
                 humDeadband: config.humDeadband ?? 5.0,
                 cooldownSeconds: config.cooldownSeconds ?? 60,
@@ -106,7 +113,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { _id, zoneName, sensorMac, pump, heater, tempSetpoint, tempDeadband, humSetpoint, humDeadband, cooldownSeconds, enabled } = body as HvacConfig & { _id?: string };
+        const { _id, zoneName, sensorMac, pump, heater, ac, tempSetpoint, tempDeadband, acTempSetpoint, acTempDeadband, humSetpoint, humDeadband, cooldownSeconds, enabled } = body as HvacConfig & { _id?: string };
 
         if (!zoneName || typeof zoneName !== "string") {
             return NextResponse.json({ success: false, error: "zoneName is required" }, { status: 400 });
@@ -114,12 +121,15 @@ export async function POST(request: NextRequest) {
         if (!sensorMac || typeof sensorMac !== "string") {
             return NextResponse.json({ success: false, error: "sensorMac is required" }, { status: 400 });
         }
-        if (!pump?.relayMac) {
-            return NextResponse.json({ success: false, error: "Pump relay MAC is required" }, { status: 400 });
-        }
-        if (!heater?.relayMac) {
-            return NextResponse.json({ success: false, error: "Heater relay MAC is required" }, { status: 400 });
-        }
+
+        const buildRelay = (r: HvacRelayConfig | undefined) => ({
+            relayMac: (r?.relayMac || "").trim().toUpperCase(),
+            relayChannel: r?.relayChannel || 1,
+            mode: r?.mode || "manual",
+            manualState: r?.manualState || "OFF",
+            lastAction: r?.lastAction ?? null,
+            lastExecutedAt: r?.lastExecutedAt ?? null,
+        });
 
         const db = await getDb();
         const now = new Date();
@@ -127,24 +137,13 @@ export async function POST(request: NextRequest) {
         const doc = {
             zoneName: zoneName.trim(),
             sensorMac: sensorMac.trim(),
-            pump: {
-                relayMac: pump.relayMac.trim().toUpperCase(),
-                relayChannel: pump.relayChannel || 1,
-                mode: pump.mode || "manual",
-                manualState: pump.manualState || "OFF",
-                lastAction: pump.lastAction ?? null,
-                lastExecutedAt: pump.lastExecutedAt ?? null,
-            },
-            heater: {
-                relayMac: heater.relayMac.trim().toUpperCase(),
-                relayChannel: heater.relayChannel || 1,
-                mode: heater.mode || "manual",
-                manualState: heater.manualState || "OFF",
-                lastAction: heater.lastAction ?? null,
-                lastExecutedAt: heater.lastExecutedAt ?? null,
-            },
+            pump: buildRelay(pump),
+            heater: buildRelay(heater),
+            ac: buildRelay(ac),
             tempSetpoint: tempSetpoint ?? 24,
             tempDeadband: tempDeadband ?? 1.0,
+            acTempSetpoint: acTempSetpoint ?? 26,
+            acTempDeadband: acTempDeadband ?? 1.0,
             humSetpoint: humSetpoint ?? 55,
             humDeadband: humDeadband ?? 5.0,
             cooldownSeconds: cooldownSeconds || 60,
