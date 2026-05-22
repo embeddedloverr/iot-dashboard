@@ -114,9 +114,11 @@ export default function Dashboard() {
   };
 
   // Filter readings based on user's assigned devices
-  const filteredReadings = hasDeviceFilter
+  // Also filter out unknown/invalid sensors (0.0°C + 0.0% with no alias)
+  const filteredReadings = (hasDeviceFilter
     ? latestReadings.filter((r) => userDevices.includes(r.mac))
-    : latestReadings;
+    : latestReadings
+  ).filter((r) => !(r.temp_c === 0 && r.hum_rh === 0 && !aliases[r.mac]));
 
   const displayedReadings = selectedMac
     ? filteredReadings.filter((r) => r.mac === selectedMac)
