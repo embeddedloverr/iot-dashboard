@@ -92,7 +92,21 @@ export async function GET() {
             }
         }
 
-        return NextResponse.json({ success: true, data: validatedResults });
+        // Filter out ghost/phantom sensors: no real data + no alias = unknown device
+        const aliasesArr = await db.collection("device_aliases").find({}).toArray();
+        const aliasSet = new Set(aliasesArr.map((a) => a.mac));
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const finalResults = validatedResults.filter((r: any) => {
+            // Keep if device has an alias
+            if (aliasSet.has(r.mac)) return true;
+            // Keep if it has real (non-zero) readings
+            if (r.temp_c || r.hum_rh) return true;
+            // Ghost device: no alias, no real data
+            return false;
+        });
+
+        return NextResponse.json({ success: true, data: finalResults });
     } catch (error) {
         console.error("Error fetching latest sensor data:", error);
         return NextResponse.json(
