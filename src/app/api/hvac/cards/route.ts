@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
+import { validateSingleReading, isPhysicallyValid } from "@/lib/sensorFilter";
 
-// GET: List pinned sensor cards with enriched live data
+// GET: List pinned sensor cards with enriched + spike-filtered live data
 export async function GET() {
     try {
         const db = await getDb();
@@ -14,20 +15,57 @@ export async function GET() {
 
         const macs = [...new Set(cards.map((c) => c.sensorMac).filter(Boolean))];
         const sensorMap: Record<string, { temp_c: number; hum_rh: number; ts: string; rssi?: number }> = {};
+        const collection = db.collection("mqtt_packets");
 
-        if (macs.length > 0) {
-            const latest = await db
-                .collection("mqtt_packets")
+        // For each pinned sensor, get latest reading and validate against recent history
+        for (const mac of macs) {
+            // Get the latest reading
+            const latestArr = await collection
                 .aggregate([
-                    { $match: { topic: "smartdwell/sensor/temp", "json.mac": { $in: macs } } },
+                    { $match: { topic: "smartdwell/sensor/temp", "json.mac": mac } },
                     { $sort: { _id: -1 } },
-                    { $group: { _id: "$json.mac", latestDoc: { $first: "$$ROOT" } } },
+                    { $limit: 1 },
+                    { $project: { _id: 0, temp_c: "$json.temp_c", hum_rh: "$json.hum_rh", ts: "$json.ts", rssi: "$json.rssi" } },
                 ])
                 .toArray();
-            for (const r of latest) {
-                const j = r.latestDoc?.json;
-                if (j?.mac) {
-                    sensorMap[j.mac] = { temp_c: j.temp_c, hum_rh: j.hum_rh, ts: j.ts || "", rssi: j.rssi };
+
+            if (latestArr.length === 0) continue;
+
+            const latest = latestArr[0];
+            const temp = latest.temp_c as number;
+            const hum = latest.hum_rh as number;
+
+            // Fetch recent history for IQR baseline (skip the latest)
+            const recentDocs = await collection
+                .aggregate([
+                    { $match: { topic: "smartdwell/sensor/temp", "json.mac": mac } },
+                    { $sort: { _id: -1 } },
+                    { $skip: 1 },
+                    { $limit: 20 },
+                    { $project: { _id: 0, temp_c: "$json.temp_c", hum_rh: "$json.hum_rh", ts: "$json.ts", rssi: "$json.rssi" } },
+                ])
+                .toArray();
+
+            const validRecent = recentDocs.filter((d) =>
+                isPhysicallyValid(d.temp_c as number, d.hum_rh as number)
+            );
+
+            const recentTemps = validRecent.map((d) => d.temp_c as number).filter((v) => typeof v === "number" && !isNaN(v));
+            const recentHums = validRecent.map((d) => d.hum_rh as number).filter((v) => typeof v === "number" && !isNaN(v));
+
+            const validation = validateSingleReading(temp, hum, recentTemps, recentHums);
+
+            if (validation.valid) {
+                sensorMap[mac] = { temp_c: temp, hum_rh: hum, ts: (latest.ts as string) || "", rssi: latest.rssi as number };
+            } else {
+                // Spike detected — fall back to most recent valid reading
+                console.log(`[HvacCards] ${mac}: Spike filtered — ${validation.reason}`);
+                const fallback = validRecent.length > 0 ? validRecent[0] : null;
+                if (fallback) {
+                    sensorMap[mac] = { temp_c: fallback.temp_c as number, hum_rh: fallback.hum_rh as number, ts: (fallback.ts as string) || "", rssi: fallback.rssi as number };
+                } else {
+                    // No valid fallback, use as-is
+                    sensorMap[mac] = { temp_c: temp, hum_rh: hum, ts: (latest.ts as string) || "", rssi: latest.rssi as number };
                 }
             }
         }
