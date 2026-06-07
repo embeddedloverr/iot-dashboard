@@ -18,7 +18,6 @@ export default function Sidebar({ activeSection, onSectionChange, isAdmin, user,
     const navItems = [
         { id: "dashboard", label: "Dashboard", icon: "📊" },
         { id: "alerts", label: "Alerts", icon: "🔔" },
-        { id: "level-sensors", label: "Level Sensors", icon: "🚰" },
     ];
 
     return (
