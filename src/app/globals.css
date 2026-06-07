@@ -3590,3 +3590,374 @@ body::before {
   margin-top: 8px;
   text-align: right;
 }
+
+/* ========== LEVEL SENSORS PANEL ========== */
+.ls-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.ls-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ls-panel-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ls-count-badge {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+  font-weight: 600;
+}
+
+.ls-btn-primary {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #06b6d4, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.ls-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.35);
+}
+
+/* -- MAC Group -- */
+.ls-mac-group {
+  margin-bottom: 28px;
+}
+
+.ls-mac-group-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 16px;
+  background: rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 12px;
+}
+
+.ls-mac-group-icon {
+  font-size: 20px;
+}
+
+.ls-mac-group-mac {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.ls-mac-group-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* -- Tank Cards Grid -- */
+.ls-tanks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.ls-tank-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ls-tank-card:hover {
+  border-color: rgba(6, 182, 212, 0.3);
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.12);
+}
+
+/* -- Tank Header -- */
+.ls-tank-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.ls-tank-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ls-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ls-status-dot.configured {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.ls-status-dot.unconfigured {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+.ls-tank-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ls-tank-node {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.ls-status-label {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* -- Gauge -- */
+.ls-tank-gauge-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.ls-gauge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ls-gauge svg {
+  display: block;
+}
+
+.ls-gauge-ring {
+  transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ls-gauge-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.ls-gauge-number {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.ls-gauge-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* -- Readings Row -- */
+.ls-tank-readings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ls-reading-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ls-reading-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ls-reading-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ls-reading-sep {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+/* -- Tank Footer -- */
+.ls-tank-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ls-tank-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.ls-configure-btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  background: rgba(6, 182, 212, 0.1);
+  color: #06b6d4;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.ls-configure-btn:hover {
+  background: rgba(6, 182, 212, 0.2);
+  border-color: rgba(6, 182, 212, 0.5);
+}
+
+/* -- Config Section -- */
+.ls-config-section {
+  margin-bottom: 24px;
+}
+
+.ls-config-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.ls-config-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-card);
+}
+
+.ls-config-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ls-config-table thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ls-config-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.ls-config-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.ls-config-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ls-config-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ls-mac-code {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(79, 125, 245, 0.1);
+  color: var(--accent-blue);
+}
+
+.ls-node-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+
+.ls-t1ref-val {
+  font-weight: 700;
+  color: var(--accent-green);
+}
+
+.ls-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* -- Form Hint -- */
+.ls-form-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* -- Responsive -- */
+@media (max-width: 600px) {
+  .ls-tanks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ls-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ls-config-table-wrap {
+    font-size: 12px;
+  }
+}

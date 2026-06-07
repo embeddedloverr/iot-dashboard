@@ -10,6 +10,7 @@ import DeviceSelector from "@/components/DeviceSelector";
 import AlertConfigPanel from "@/components/AlertConfig";
 import RelayRulesPanel from "@/components/RelayRulesPanel";
 import HvacPanel from "@/components/HvacPanel";
+import LevelSensorsPanel from "@/components/LevelSensorsPanel";
 import { useAuth } from "@/components/AuthProvider";
 
 interface SensorReading {
@@ -211,6 +212,10 @@ export default function Dashboard() {
             aliases={aliases}
             onAliasUpdate={fetchAliases}
           />
+        )}
+
+        {activeSection === "level-sensors" && (
+          <LevelSensorsPanel isAdmin={isAdmin} />
         )}
 
         {activeSection === "hvac" && isSuperAdmin && (
